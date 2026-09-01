@@ -535,7 +535,12 @@ exe 기동(인자 없음) → gui.lock 단일 인스턴스 확인(이미 있으�
   제품 §7.1 기동 흐름에 동일 적용)
 - ✅ cgo-free 트레이 — `fyne.io/systray` 교차 빌드·실기기 아이콘/메뉴 동작 확인
 - ✅ 127.0.0.1 HTTP + 브라우저 자동 오픈, 방화벽 프롬프트 무발생
-- ⏳ `KnownFolders` Downloads 경로(OneDrive 리다이렉션) — 확인 대기
+- ✅ `KnownFolders` Downloads 경로 — 실폴더와 일치 확인
+- ✅ UTF-8 콘솔 전환 수정본(v2)으로 한글 출력 정상, 트레이 종료 정상
+
+**M0 게이트 종료 (2026-09-02): 4항목 전부 통과, fallback 불필요. 기술 선택 확정
+— 단일 exe(windowsgui+AttachConsole+SetConsoleOutputCP), fyne.io/systray,
+go:embed+127.0.0.1+기본 브라우저, KnownFolders Downloads 감시. M1 착수 가능.**
 
 ## 10. 수용 기준 (Gap 분석 기준점)
 
