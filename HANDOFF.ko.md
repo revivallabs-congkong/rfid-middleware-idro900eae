@@ -20,11 +20,14 @@
 
 ## 남은 단계 (순서대로)
 
-1. **리모트 저장소 생성·푸시**
-   - revivallabs-congkong org 에 `rfid-middleware-idro900eae` 생성 (gh CLI 사용 가능)
-   - `git remote add origin ... && git push -u origin main` — CI(.github/workflows/ci.yml)가 test+race+교차빌드를 돈다
-2. **운영 API smoke test (계획서 단계 2 마무리)**
-   - 운영진에게 요청: 테스트 게이트의 64자리 펄스 토큰, 페어링된 테스트 EPC, 미등록 EPC, 가능하면 토큰 회수 시험 시간대
+1. ~~**리모트 저장소 생성·푸시**~~ ✅ 완료 (2026-09-01)
+   - https://github.com/revivallabs-congkong/rfid-middleware-idro900eae (private)
+   - 첫 CI 통과 (test+race+교차빌드). annotation: actions/checkout@v4·setup-go@v5 의
+     Node 20 deprecated 경고 — 동작엔 문제 없음, 여유 있을 때 버전 업
+2. **운영 API smoke test (계획서 단계 2 마무리)** — 절차서: `docs/ops-smoke.ko.md`
+   - 실토큰 없이 가능한 사전 확인은 완료: 운영 엔드포인트 도달, 무효 토큰 404 봉투가
+     분류기 기대와 일치, 무효 토큰 replay 드라이런에서 `TOKEN_SUSPENDED` 정상 동작
+   - **운영진에게 요청 필요**: 테스트 게이트의 64자리 펄스 토큰, 페어링된 테스트 EPC, 미등록 EPC, 가능하면 토큰 회수 시험 시간대
    - `rfid-middleware replay --stdin --reader <id> --config <실토큰 설정>` 으로 프로토콜 §10 체크리스트 1~3 확인
    - ⚠️ 실토큰은 저장소·테스트 리포트에 기록 금지
 3. **실장비 통합 (계획서 단계 3)**
