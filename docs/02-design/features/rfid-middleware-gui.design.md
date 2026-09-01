@@ -527,12 +527,15 @@ exe 기동(인자 없음) → gui.lock 단일 인스턴스 확인(이미 있으�
 
 ---
 
-## 9. M0 스파이크 반영 대기 항목
+## 9. M0 스파이크 결과 (2026-09-02 실기기, spike/m0)
 
-- `-H=windowsgui` + AttachConsole 실기기 UX (실패 시 2-exe 분리 fallback)
-- cgo-free systray 라이브러리 확정 (실패 시 트레이 제거, 창 상주 대체)
-- 브라우저 자동 오픈·방화벽 무프롬프트 확인
-- `KnownFolders` 기반 Downloads 경로(OneDrive 리다이렉션) 확인
+- ✅ `-H=windowsgui` + AttachConsole — 더블클릭 시 콘솔 무발생, `check` 인자 실행
+  시 부모 cmd 에 출력 확인. **발견**: cmd 기본 CP949 로 한글이 깨짐 → CLI 분기는
+  AttachConsole 직후 `SetConsoleOutputCP(65001)` 호출 필수 (스파이크에 반영 완료,
+  제품 §7.1 기동 흐름에 동일 적용)
+- ✅ cgo-free 트레이 — `fyne.io/systray` 교차 빌드·실기기 아이콘/메뉴 동작 확인
+- ✅ 127.0.0.1 HTTP + 브라우저 자동 오픈, 방화벽 프롬프트 무발생
+- ⏳ `KnownFolders` Downloads 경로(OneDrive 리다이렉션) — 확인 대기
 
 ## 10. 수용 기준 (Gap 분석 기준점)
 

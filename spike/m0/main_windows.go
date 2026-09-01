@@ -38,11 +38,14 @@ func main() {
 // ─── 항목 1: 콘솔 분기 ───
 
 func attachParentConsole() bool {
-	proc := syscall.NewLazyDLL("kernel32.dll").NewProc("AttachConsole")
-	r, _, _ := proc.Call(uintptr(0xFFFFFFFF)) // ATTACH_PARENT_PROCESS
+	k32 := syscall.NewLazyDLL("kernel32.dll")
+	r, _, _ := k32.NewProc("AttachConsole").Call(uintptr(0xFFFFFFFF)) // ATTACH_PARENT_PROCESS
 	if r == 0 {
 		return false
 	}
+	// cmd 기본 코드페이지(CP949)에서 UTF-8 한글이 깨진다 — 콘솔을 UTF-8(65001)로 전환.
+	// (스파이크 실기기 확인에서 발견 — 제품 CLI 분기에도 동일 적용 필요)
+	k32.NewProc("SetConsoleOutputCP").Call(65001)
 	if out, err := os.OpenFile("CONOUT$", os.O_WRONLY, 0); err == nil {
 		os.Stdout, os.Stderr = out, out
 	}
