@@ -37,9 +37,12 @@
      — 클라이언트 종료 + 리더 전원 재투입으로 해결 (README 운영 메모 기재)
    - **남은 것**: RDR3 정식 시험(debounceSec=60 으로 태그 10초 유지 → 전송 1건),
      오프라인 차단→복구 재생(§10 항목 5), (선택) 토큰 회수 시험
-4. **Windows 상주화·출시 (계획서 단계 4)**
-   - 깨끗한 Windows 노트북에서 `service install` → 재부팅 자동 시작 → 큐 복구 확인
-   - 설정 파일 ACL(icacls), 절전 해제 정책, SHA-256 checksum 패키징 — README §Windows 설치 참조
+4. **Windows 상주화·출시 (계획서 단계 4)** — 패키징 완료, 설치 검증 남음
+   - ✅ 정식 릴리스 **v0.1.0** 배포 (2026-09-01): exe + SHA-256 + config.example.json,
+     릴리스 노트에 검증 상태·설치 요약 포함
+   - 남은 것: 깨끗한 Windows 노트북에서 `service install` → 재부팅 자동 시작 → 큐 복구
+     확인, 설정 파일 ACL(icacls)·절전 해제 정책 적용 — README §Windows 설치 참조
+   - 남은 현장 시험: RDR3(debounce 60, 10초 유지→1건), 오프라인 차단→복구, (선택) 토큰 회수
 
 ## 참고
 
