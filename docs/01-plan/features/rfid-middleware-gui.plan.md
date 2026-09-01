@@ -48,6 +48,7 @@
       (pid·version·mode·connState·ntp), 이벤트 구동 status 기록, `session.Probe`
 - [ ] 서비스 start/stop·queue resume 을 GUI 버튼으로 (기존 CLI 경로 재사용, UAC 경유)
 - [ ] `-H=windowsgui` + AttachConsole 로 CLI 하위 호환 유지
+- [ ] **세션 카탈로그 파일 기반 세션 선택 + 토큰 자동 매칭** (양식 v1, 설계서 §3)
 
 ### 2.2 Out of Scope
 
@@ -81,6 +82,10 @@
 | FR-14 | 마법사 4단계(선택): 오프라인 차단→복구 재생 — HANDOFF §10 항목 5를 상시 재현 가능하게 | Medium | Pending |
 | FR-15 | 마법사 5단계: pass/warn/fail 요약 리포트 + 원클릭 내보내기 (logging 금칙 필드 정책 경유) | High | Pending |
 | FR-16 | 마법사 불변식: 운영 큐·gate 불변경, 실체크인은 명시적 확인 후에만 | High | Pending |
+| FR-17 | 세션 카탈로그: 사람이 `pulse-sessions.json` 파일을 교체/갱신하면 GUI 목록에 반영 (mtime 감시 + 새로고침) | High | Pending |
+| FR-18 | GUI에서 리더별 세션 선택 → **토큰 자동 매칭**(카탈로그에서 주입) → config 반영 → preflight로 boothName/unitName 교차 검증 | High | Pending |
+| FR-19 | 카탈로그 양식 v1 준수 (§6.4, congkong-v3 콘솔이 이 양식으로 내보냄). 미들웨어는 알 수 없는 필드 무시(관용 파싱) | High | Pending |
+| FR-20 | 세션 목록·화면 어디에도 토큰 전문 미표시 (fingerprint 8자만) | High | Pending |
 
 ### 3.2 Non-Functional Requirements
 
@@ -136,7 +141,8 @@ Dynamic (기존 프로젝트 레벨 유지 — Go 단일 바이너리 + 기능 �
 | 프로세스 토폴로지 | (a) 서비스+GUI 컴패니언 / (b) GUI 단일 통합 / (c) 브라우저 유일 조작면 | **(a)+(b) 하이브리드**: 단일 exe가 `app.lock` 획득 결과로 호스팅/관측 모드 자동 분기 | 코어가 이미 이중 기동을 잠금으로 차단 — 잠금 중재가 앱 2개 없이 양쪽 장점 확보. (b) 단독은 창 닫힘=태그 유실, (a) 단독은 관리자 권한 필요로 "복사 실행" 제약 위반 |
 | GUI 기술 | Fyne / Wails / lxn-walk / **go:embed+로컬HTTP+브라우저** + systray | **go:embed 로컬 웹 UI + cgo-free systray** (walk 는 예비안) | Fyne=CGO 필요, Wails=교차빌드 불가+WebView2 선설치(오프라인 venue 위험). 채택안은 CGO 0·런타임 의존 0·기존 Vue/TS 역량 재사용 |
 | GUI↔코어 통신 | named pipe / 코어 HTTP / **모드별 분리** | 호스팅=in-process(`Echo` 탭+`gates.Snapshot`), 관측=status.json 폴링+로그 tail, 제어=자기 exe CLI 재실행 | **코어에 새 IPC 표면을 만들지 않는다** — 토큰 보유 프로세스의 공격면 불증가. status.json 은 temp+fsync+rename 이라 torn read 없음 |
-| 콘솔 하위 호환 | 별도 exe / **windowsgui+AttachConsole** | 단일 exe 유지, M0 에서 UX 수용 불가 판명 시 2-exe 분리 fallback | 단일 exe 배포 제약 |
+| 콘솔 하위 호환 | 별도 exe / **windowsgui+AttachConsole** | 단일 exe 유지, M0 에서 UX 수용 불가 판명 시 2-exe 분리 fallback | 단일 exe 배포 선호 |
+| 배포 방식 | zip 복사 실행 / **설치 패키지(Inno Setup)** | **설치 패키지 채택** (2026-09-02 제약 완화): 서비스 등록·ACL·절전 정책을 설치가 자동화. zip 은 fallback 유지 | 사전 설치·세팅이 필요하면 설치 프로그램으로 해결 가능해짐. 단, GUI 기술 선택은 불변 — WebView2 계열 탈락 근거는 설치가 아니라 **macOS 교차 빌드 불가** |
 | 코어 변경 | — | **additive 5건만**: LastTagAt/LastSuccessAt 기록(현재 선언만 되고 미기록 — M1 필수), status 필드 확장, 이벤트 구동 기록, 잠금 헬퍼 export, `session.Probe` | `app.Run` 시그니처 불변, 파이프라인 불변식 유지 |
 
 ### 6.3 필수 기술 조건 (선택이 아닌 조건)
@@ -157,7 +163,7 @@ Dynamic (기존 프로젝트 레벨 유지 — Go 단일 바이너리 + 기능 �
 | **M1** | 관측 GUI(읽기 전용) + 코어 additive 변경 | 3~4일 | 서비스 상태를 GUI만으로 판단, `go test -race`·교차빌드 CI 그린 |
 | **M2** | 호스팅 GUI: 잠금 중재 분기, in-process app.Run + Echo→SSE(ring buffer), 트레이 상주 | 3일 | cmd 없이 하루 운영, 종료 grace 10s 통합 테스트 |
 | **M3** | 현장 점검 마법사 0~5단계 + `_selftest` 격리 + redacted 리포트 | 4~5일 | 비개발자 완주, 유출 부재 테스트 고정, RDR3·오프라인 복구가 마법사로 재현 |
-| **M4** | 패키징·현장 검증: zip(exe+config.example+README 1p)+SHA-256, 깨끗한 노트북 검증 | 2일 | HANDOFF 단계 4 잔여(재부팅 자동 시작·큐 복구) 동시 완료 |
+| **M4** | **설치 패키지** 제작(Inno Setup, CI windows 러너에서 빌드): 서비스 등록·config ACL·절전 해제 정책·시작 메뉴·제거 지원 + SHA-256. 깨끗한 노트북 검증 | 2~3일 | 설치→재부팅 자동 시작→큐 복구 원클릭 검증 (HANDOFF 단계 4 잔여 동시 완료). zip 복사 실행도 fallback 으로 계속 지원 |
 
 합계 14~16 작업일. **M0 가 게이트** — 스파이크 결과 전 GUI 기술 선택은 되돌릴 수 있는 상태 유지.
 

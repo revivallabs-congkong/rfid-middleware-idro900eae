@@ -6,3 +6,4 @@
 *.db-shm
 config.json
 *.xlsx
+pulse-sessions.json
