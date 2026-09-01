@@ -26,9 +26,9 @@
 ## 2. 준비
 
 1. 저장소 루트에 `config.json` 생성 (**gitignore 대상** — 커밋되지 않음):
-   `config.example.json` 을 복사한 뒤 `addr` 의 `PORT` placeholder 를 임의 유효
-   포트(예: `192.168.9.6:4001`)로, `pulseToken` 을 실토큰으로 교체.
-   replay 는 TCP 접속을 하지 않으므로 addr 은 형식만 유효하면 된다.
+   `config.example.json` 을 복사한 뒤 `pulseToken` 을 실토큰으로 교체.
+   replay 는 TCP 접속을 하지 않으므로 `addr` 은 형식만 유효하면 된다
+   (예시 기본값 `192.168.9.6:5578` 그대로 사용 가능).
 2. `dataDir` 은 로컬 임시 경로로 변경 — **절대 경로만 허용**된다
    (상대 경로는 설정 검증에서 거부됨). 저장소 밖 경로를 권장한다.
 3. 시험 후 `config.json` 의 토큰을 즉시 삭제하거나 파일을 제거한다.
