@@ -16,7 +16,7 @@
   - RDR1·RDR2 는 가짜 리더 테스트로 검증 (`internal/reader/session/session_test.go`)
   - `go vet ./...`, `go test -race ./...` 전부 통과
   - `GOOS=windows GOARCH=amd64` 교차 빌드 확인 (약 15MB exe)
-- 구조·불변식·수용 기준 매핑은 설계서 §4, §13, §14.6 이 기준. 운영 방법은 `README.ko.md`.
+- 구조·불변식·수용 기준 매핑은 설계서 §4, §13, §14.6 이 기준. 운영 방법은 `README.md`.
 
 ## 남은 단계 (순서대로)
 

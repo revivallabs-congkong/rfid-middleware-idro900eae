@@ -6,6 +6,26 @@ Windows 상주 프로그램. Go 단일 바이너리, CGO 없음.
 - 계획서: `congkong-v3/docs/features/pulse/rfid-middleware-idro900eae-development-plan.ko.md`
 - 설계서: `congkong-v3/docs/02-design/features/rfid-middleware-idro900eae.design.md`
 - 리더 SSOT: `IDRO900EAE-settings.md` / 서버 SSOT: `rfid-middleware-protocol.ko.md` v1.1
+- 이 저장소 안 문서: [운영 API smoke 절차](docs/ops-smoke.ko.md) · [인수인계](HANDOFF.ko.md)
+
+## 빠른 시작
+
+```text
+동작 흐름:  리더 TCP (>T... CRLF 라인) → EPC 파싱 → 60초 디바운스
+           → SQLite 큐 (오프라인 24h 보존) → POST /v3/pulse-tokens/{token}/check-in
+```
+
+1. `config.example.json` 을 `config.json` 으로 복사하고 `addr`(리더 IP:데이터포트),
+   `pulseToken`(운영진에게 발급받은 64자 hex), `dataDir` 를 채운다.
+2. `rfid-middleware validate-config --config config.json` 으로 검증한다.
+3. 개발 PC 에서는 `run` 으로 foreground 실행, 현장 노트북에서는 아래
+   [Windows 설치](#windows-설치-관리자-powershell)대로 서비스 등록한다.
+4. 실행 상태는 `rfid-middleware status --data-dir <dataDir>` 로 확인한다
+   (송신 상태, 큐 잔량, 리더별 게이트 상태·마지막 태그/성공 시각이
+   status.json 기준으로 출력된다).
+
+⚠️ 펄스 토큰은 이 저장소·이슈·로그 첨부 어디에도 기록하지 않는다.
+`config.json` 은 gitignore 대상이다.
 
 ## 빌드
 
@@ -28,8 +48,10 @@ rfid-middleware service install|uninstall|start|stop --config config.json   # Wi
 
 - `replay` 는 실제 TCP 리더 없이 CRLF 프레이머 이후 전체 경로(파서→디바운스→큐→전송)를
   운영과 동일하게 태운다. NDJSON 형식(`{"receivedAt":"RFC3339","chunks":["hex..."]}`)은
-  chunk 경계와 수신 시각까지 재현한다.
+  chunk 경계와 수신 시각까지 재현한다. `--drain`(기본 켜짐)은 입력 소진 후 큐를
+  비우고 종료한다. 운영 API 상대 시험 절차는 [docs/ops-smoke.ko.md](docs/ops-smoke.ko.md) 참조.
 - `queue resume` 은 토큰 회수/재바인딩으로 중단된 리더를 서비스 중지 상태에서 재개한다.
+  `--pending send` 는 쌓인 큐를 재전송, `--pending discard` 는 폐기 후 재개한다.
 
 ## 설정
 
