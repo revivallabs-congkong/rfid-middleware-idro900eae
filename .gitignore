@@ -7,3 +7,4 @@
 config.json
 *.xlsx
 pulse-sessions.json
+spike/**/*.exe
