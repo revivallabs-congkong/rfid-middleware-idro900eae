@@ -1,0 +1,348 @@
+// Package app 은 composition root 다 — 설정으로부터 전체 파이프라인을 조립하고
+// 수명주기를 관리한다 (설계서 §3, §4).
+package app
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/admission"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/clock"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/config"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/congkong"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/domain"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/gate"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/health"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/logging"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/reader/session"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/replay"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/sender"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/store/sqlite"
+)
+
+type Options struct {
+	Cfg *config.Config
+	// Echo 가 nil 이 아니면 로그를 콘솔에도 출력한다 (foreground).
+	Echo io.Writer
+	// ReplayInput 이 nil 이 아니면 TCP 리더 대신 재생 입력을 사용한다.
+	ReplayInput  io.Reader
+	ReplayNDJSON bool
+	ReplayReader string
+	// DrainAndExit 는 replay 모드에서 입력 소진 + 큐 드레인 후 종료한다.
+	DrainAndExit bool
+}
+
+// Run 은 ctx 취소(또는 replay drain 완료)까지 전체 파이프라인을 실행한다.
+// foreground 와 Windows Service 양쪽이 같은 이 함수를 호출한다 (설계서 §10).
+func Run(ctx context.Context, opts Options) error {
+	cfg := opts.Cfg
+
+	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
+		return fmt.Errorf("dataDir 생성 실패: %w", err)
+	}
+	release, err := acquireLock(filepath.Join(cfg.DataDir, "app.lock"))
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	log, err := logging.New(filepath.Join(cfg.DataDir, "logs"), logging.ParseLevel(cfg.LogLevel), opts.Echo)
+	if err != nil {
+		return err
+	}
+	defer log.Close()
+
+	if err := health.CheckDiskDir(cfg.DataDir); err != nil {
+		return fmt.Errorf("dataDir 쓰기 불가: %w", err)
+	}
+
+	// NTP 점검 — checkedAt 신뢰의 전제 (R7).
+	ntp := health.CheckNTP()
+	switch {
+	case !ntp.Supported:
+		log.Infof("NTP_CHECK_SKIPPED", logging.F{"message": ntp.Detail})
+	case !ntp.ServiceRunning || !ntp.QueryOK:
+		log.Errorf("NTP_WARNING", logging.F{
+			"message": "Windows Time 동기화를 확인하세요 — checkedAt 이 서버에서 400 으로 폐기될 수 있습니다",
+			"serviceRunning": ntp.ServiceRunning, "queryOk": ntp.QueryOK,
+		})
+	default:
+		log.Infof("NTP_OK", logging.F{"serviceRunning": true})
+	}
+
+	st, err := sqlite.Open(filepath.Join(cfg.DataDir, "queue.db"))
+	if err != nil {
+		return fmt.Errorf("큐 DB 열기 실패: %w", err)
+	}
+	defer st.Close()
+
+	clk := clock.Real{}
+	gates := gate.NewRegistry()
+
+	// 영속화된 gate 상태 복원 — suspension 은 재시작을 넘어 유지된다.
+	rows, err := st.Gates()
+	if err != nil {
+		return fmt.Errorf("gate 상태 복원 실패: %w", err)
+	}
+	for _, r := range cfg.Readers {
+		if row, ok := rows[r.ID]; ok {
+			state := row.State
+			// 정상/일시 상태는 preflight 로 다시 확정한다. suspended 는 유지.
+			if !state.Suspended() {
+				state = domain.GatePreflightPending
+			}
+			gates.Init(r.ID, gate.Entry{
+				State: state, Reason: row.Reason,
+				Fingerprint: row.TokenFingerprint, Meta: row.Meta,
+			})
+			if state.Suspended() {
+				log.Errorf("GATE_RESTORED_SUSPENDED", logging.F{
+					"readerId": r.ID, "gateState": string(state), "message": row.Reason,
+				})
+			}
+		} else {
+			gates.Init(r.ID, gate.Entry{State: domain.GatePreflightPending})
+		}
+	}
+
+	client, err := congkong.New(cfg.APIHost, time.Duration(cfg.RequestTimeoutSec)*time.Second)
+	if err != nil {
+		return err
+	}
+
+	snd := sender.New(st, client, cfg, gates, clk, log, time.Duration(cfg.QueueMaxAgeHours)*time.Hour)
+	adm := &admission.Service{
+		Store: st, Gates: gates, Log: log,
+		Debounce: time.Duration(cfg.DebounceSec) * time.Second,
+		Wake:     snd.Wake,
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wg sync.WaitGroup
+
+	// preflight — reader 별 토큰 자기 검증 (B1)
+	for _, r := range cfg.Readers {
+		if e, ok := gates.Get(r.ID); ok && e.State.Suspended() {
+			continue // 복원된 suspension 은 preflight 로 풀지 않는다 — 명시적 resume 필요
+		}
+		wg.Add(1)
+		go func(r config.Reader) {
+			defer wg.Done()
+			p := &sender.Preflight{Client: client, Gates: gates, Store: st, Clock: clk, Log: log}
+			p.Run(runCtx, r.ID, r.Token)
+		}(r)
+	}
+
+	// sender — 전역 1개 (불변식 12)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		snd.Run(runCtx)
+	}()
+
+	// 입력: TCP 리더 세션 또는 재생
+	replayDone := make(chan error, 1)
+	if opts.ReplayInput != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runner := &replay.Runner{ReaderID: opts.ReplayReader, Handler: adm.Handle, Log: log, Clock: clk}
+			var rerr error
+			if opts.ReplayNDJSON {
+				rerr = runner.RunNDJSON(runCtx, opts.ReplayInput)
+			} else {
+				rerr = runner.RunRaw(runCtx, opts.ReplayInput)
+			}
+			replayDone <- rerr
+		}()
+	} else {
+		for _, r := range cfg.Readers {
+			wg.Add(1)
+			go func(r config.Reader) {
+				defer wg.Done()
+				s := session.New(session.Config{
+					ReaderID: r.ID, Addr: r.Addr,
+					PowerGain: cfg.PowerGain, Buzzer: cfg.Buzzer,
+				}, adm.Handle, log, clk)
+				s.Run(runCtx)
+			}(r)
+		}
+	}
+
+	// sweeper — 만료·디바운스 정리·만료 임박 경고 (설계서 §7.4)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		maxAge := time.Duration(cfg.QueueMaxAgeHours) * time.Hour
+		debounce := time.Duration(cfg.DebounceSec) * time.Second
+		keep := 2 * debounce
+		if keep < 10*time.Minute {
+			keep = 10 * time.Minute
+		}
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-clk.After(time.Minute):
+			}
+			now := clk.Now()
+			expired, err := st.ExpireBefore(now.Add(-maxAge).UnixMilli())
+			if err != nil {
+				log.Errorf("QUEUE_EXPIRE_FAILED", logging.F{"message": err.Error()})
+			}
+			for _, e := range expired {
+				log.Warnf("QUEUE_ITEM_EXPIRED", logging.F{
+					"readerId": e.ReaderID, "epc": e.EPC, "checkedAt": e.CheckedAt,
+				})
+			}
+			if _, err := st.CleanupDebounce(now.Add(-keep).UnixMilli()); err != nil {
+				log.Warnf("DEBOUNCE_CLEANUP_FAILED", logging.F{"message": err.Error()})
+			}
+			// 만료 임박(보관 상한의 90% 초과) 경고 (계획서 §10)
+			if oldest, ok, _ := st.OldestCheckedAt(); ok {
+				if t, perr := time.Parse(time.RFC3339Nano, oldest); perr == nil {
+					if now.Sub(t) > maxAge*9/10 {
+						log.Errorf("QUEUE_NEAR_EXPIRY", logging.F{
+							"oldestCheckedAt": oldest,
+							"message":         "만료 전 네트워크/서버 복구가 필요합니다",
+						})
+					}
+				}
+			}
+		}
+	}()
+
+	// 반복 경보 — suspension/halt 를 사람이 발견할 수 있게 (계획서 §6.6)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case <-clk.After(time.Minute):
+			}
+			snap, global := gates.Snapshot()
+			if global == domain.SenderHalted {
+				log.Errorf("SENDER_HALTED_REQUEST_BUG", logging.F{
+					"message": "요청 형식 치명 오류 — 수정 배포 후 queue resume 이 필요합니다",
+				})
+			}
+			for id, e := range snap {
+				if e.State.Suspended() {
+					log.Errorf("GATE_SUSPENDED_ALERT", logging.F{
+						"readerId": id, "gateState": string(e.State), "message": e.Reason,
+					})
+				}
+			}
+		}
+	}()
+
+	// status snapshot — 5초마다 atomic replace (설계서 §12.3)
+	statusPath := filepath.Join(cfg.DataDir, "status.json")
+	writeStatus := func() {
+		snap, global := gates.Snapshot()
+		depth, _ := st.Depth()
+		oldest, _, _ := st.OldestCheckedAt()
+		s := health.Status{
+			UpdatedAt:       clk.Now().Format(time.RFC3339),
+			SenderState:     string(global),
+			QueueDepth:      depth,
+			OldestCheckedAt: oldest,
+		}
+		for _, r := range cfg.Readers {
+			e := snap[r.ID]
+			s.Readers = append(s.Readers, health.ReaderStatus{
+				ID: r.ID, GateState: string(e.State), GateReason: e.Reason,
+				EventName: e.Meta.EventName, BoothName: e.Meta.BoothName,
+				UnitName: e.Meta.UnitName, CooldownSec: e.Meta.CooldownSec,
+			})
+		}
+		if err := health.WriteStatus(statusPath, s); err != nil {
+			log.Warnf("STATUS_WRITE_FAILED", logging.F{"message": err.Error()})
+		}
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			writeStatus()
+			select {
+			case <-runCtx.Done():
+				writeStatus()
+				return
+			case <-clk.After(5 * time.Second):
+			}
+		}
+	}()
+
+	log.Infof("MIDDLEWARE_STARTED", logging.F{
+		"readers": len(cfg.Readers), "replay": opts.ReplayInput != nil,
+	})
+
+	// 종료 대기
+	if opts.ReplayInput != nil && opts.DrainAndExit {
+		select {
+		case <-ctx.Done():
+		case rerr := <-replayDone:
+			if rerr != nil && rerr != context.Canceled {
+				log.Errorf("REPLAY_FAILED", logging.F{"message": rerr.Error()})
+			}
+			// 입력 소진 후 큐 드레인(또는 더 진행 불가) 대기
+			drainWait(ctx, st, gates, clk)
+		}
+	} else {
+		<-ctx.Done()
+	}
+
+	// 정상 종료: 새 입력을 막고 진행 중 트랜잭션을 끝낸다. 처리 중 큐 항목은
+	// 삭제하지 않아 다음 기동에서 안전하게 재시도한다 (계획서 §5.2).
+	cancel()
+	wg.Wait()
+	log.Infof("MIDDLEWARE_STOPPED", logging.F{})
+	return nil
+}
+
+// drainWait 는 sendable 큐가 빌 때까지(또는 진행이 불가능해질 때까지) 기다린다.
+func drainWait(ctx context.Context, st *sqlite.Store, gates *gate.Registry, clk clock.Clock) {
+	idle := 0
+	var lastDepth int64 = -1
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-clk.After(200 * time.Millisecond):
+		}
+		if gates.GlobalState() == domain.SenderHalted {
+			return
+		}
+		sendable := gates.SendableReaders()
+		depth, err := st.Depth()
+		if err != nil {
+			return
+		}
+		if depth == 0 {
+			return
+		}
+		if len(sendable) == 0 {
+			// preflight 진행 중일 수 있으므로 잠시 기다리되, 오래 멈추면 종료
+			idle++
+			if idle > 150 { // 30초
+				return
+			}
+			continue
+		}
+		// 남은 행이 전부 미래 backoff 면 드레인 종료로 본다 (재시작 시 재생됨)
+		dueMS, ok, _ := st.NextDueAtMS(sendable)
+		if ok && dueMS > clk.Now().Add(2*time.Second).UnixMilli() && depth == lastDepth {
+			return
+		}
+		lastDepth = depth
+	}
+}

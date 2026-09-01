@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "apiHost": "https://api.congkong.net",
+  "dataDir": "C:\\ProgramData\\CongKong\\RFIDMiddleware",
+  "debounceSec": 60,
+  "queueMaxAgeHours": 24,
+  "requestTimeoutSec": 10,
+  "powerGain": 300,
+  "buzzer": 0,
+  "logLevel": "info",
+  "readers": [
+    {
+      "id": "gate-a",
+      "addr": "192.168.9.6:PORT",
+      "pulseToken": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

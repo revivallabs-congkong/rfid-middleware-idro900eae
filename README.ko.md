@@ -1,0 +1,90 @@
+# CongKong RFID 체크인 미들웨어 (IDRO900EAE)
+
+IDRO900EAE UHF RFID 리더가 읽은 태그(EPC)를 CongKong 서버 체크인 API 로 전달하는
+Windows 상주 프로그램. Go 단일 바이너리, CGO 없음.
+
+- 계획서: `congkong-v3/docs/features/pulse/rfid-middleware-idro900eae-development-plan.ko.md`
+- 설계서: `congkong-v3/docs/02-design/features/rfid-middleware-idro900eae.design.md`
+- 리더 SSOT: `IDRO900EAE-settings.md` / 서버 SSOT: `rfid-middleware-protocol.ko.md` v1.1
+
+## 빌드
+
+```bash
+go build ./...
+GOOS=windows GOARCH=amd64 go build -o dist/rfid-middleware.exe ./cmd/rfid-middleware
+```
+
+## 실행 모드
+
+```text
+rfid-middleware run --config config.json                # foreground (콘솔 로그 echo)
+rfid-middleware replay --stdin --reader gate-a --config config.json
+rfid-middleware replay --file fixture.ndjson --ndjson --reader gate-a --config config.json
+rfid-middleware validate-config --config config.json
+rfid-middleware status --data-dir "C:\ProgramData\CongKong\RFIDMiddleware"
+rfid-middleware queue resume --reader gate-a --pending send|discard --config config.json
+rfid-middleware service install|uninstall|start|stop --config config.json   # Windows 전용
+```
+
+- `replay` 는 실제 TCP 리더 없이 CRLF 프레이머 이후 전체 경로(파서→디바운스→큐→전송)를
+  운영과 동일하게 태운다. NDJSON 형식(`{"receivedAt":"RFC3339","chunks":["hex..."]}`)은
+  chunk 경계와 수신 시각까지 재현한다.
+- `queue resume` 은 토큰 회수/재바인딩으로 중단된 리더를 서비스 중지 상태에서 재개한다.
+
+## 설정
+
+`config.example.json` 참조. 주석 없는 엄격한 JSON 이며 알 수 없는 필드는 오류다.
+
+| 필드 | 기본 | 범위 |
+| --- | --- | --- |
+| `version` | (필수) | 1 |
+| `apiHost` | (필수) | HTTPS (loopback 은 HTTP 허용 — 테스트용) |
+| `dataDir` | (필수) | 절대 경로. 큐 DB·로그·status.json 위치 |
+| `debounceSec` | 60 | 1~3600 |
+| `queueMaxAgeHours` | 24 | 1~24 (서버 `CheckedAtMaxAge` 계약) |
+| `requestTimeoutSec` | 10 | 1~30 |
+| `powerGain` | 300 | 50~300 |
+| `buzzer` | 0 | 0/1 |
+| `readers[]` | (필수 1~8) | `id`, `addr`(host:port), `pulseToken`(64 hex) |
+
+⚠️ 리더 TCP 데이터 포트는 벤더 문서에 없어 **현장 확인 후** `addr` 에 기입한다
+(`PORT` placeholder 는 검증에서 거부된다).
+
+## Windows 설치 (관리자 PowerShell)
+
+```powershell
+mkdir "C:\ProgramData\CongKong\RFIDMiddleware"
+copy config.json "C:\ProgramData\CongKong\RFIDMiddleware\config.json"
+# 설정 파일 ACL 제한 (SYSTEM/Administrators 만)
+icacls "C:\ProgramData\CongKong\RFIDMiddleware\config.json" /inheritance:r `
+  /grant "SYSTEM:F" /grant "Administrators:F"
+.\rfid-middleware.exe service install --config "C:\ProgramData\CongKong\RFIDMiddleware\config.json"
+.\rfid-middleware.exe service start
+```
+
+- 서비스는 Automatic (Delayed Start), 실패 시 1분 후 자동 재시작.
+- 행사 중 노트북 절전/최대 절전은 꺼 둔다 (전원 옵션).
+- NTP 동기화 필수: `w32tm /query /status` 확인. 시계가 틀어지면 서버가
+  `checkedAt` 을 400 으로 폐기한다.
+
+## 운영 메모
+
+- **토큰 회수(404)**: 해당 리더만 송신 중단(`SUSPENDED_TOKEN`)되고 반복 ERROR 가 남는다.
+  새 토큰 설정 → 서비스 중지 → `queue resume` → 서비스 시작으로만 재개한다.
+  회수~재발급 사이의 스캔은 큐에 적재되지 않는다(의도된 동작).
+- **400 error bind**: 미들웨어 자신의 요청 형식 버그 — 전역 송신 중단. 스캔은 계속
+  큐에 쌓이며 수정 배포 후 원래 시각으로 재전송된다(24시간 만료 한도 내).
+- **오프라인**: 5xx/타임아웃/연결 실패는 5s→30s→2m 백오프로 재시도하며, 프로세스
+  재시작 후에도 큐가 유지된다. 원래 `checkedAt` 은 절대 갱신되지 않는다.
+- **로그**: `dataDir\logs\middleware-YYYYMMDD.jsonl` (10 MiB×10, 14일).
+  참가자 이름·전화·이메일·서버 응답 원문·전체 토큰은 어떤 로그에도 남지 않는다.
+
+## 테스트
+
+```bash
+go test ./...
+go test -race ./...
+```
+
+수용 기준 매핑은 설계서 §14.6 참조. B1~B7 은 자동 테스트로, RDR1~RDR3 은
+가짜 리더 테스트 + 실장비 단계(3단계)에서 검증한다.

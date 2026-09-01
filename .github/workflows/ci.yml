@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Race test
+        run: go test -race ./...
+      - name: Windows amd64 cross build
+        run: GOOS=windows GOARCH=amd64 go build -o dist/rfid-middleware.exe ./cmd/rfid-middleware
+      - name: Checksum
+        run: shasum -a 256 dist/rfid-middleware.exe

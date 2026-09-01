@@ -1,0 +1,7 @@
+/rfid-middleware
+/rfid-middleware.exe
+/dist/
+*.db
+*.db-wal
+*.db-shm
+config.json
