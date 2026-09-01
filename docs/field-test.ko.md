@@ -10,6 +10,7 @@
 - IDRO900EAE + 전원, 페어링 완료된 UHF 태그 1개 이상
 - `rfid-middleware.exe` — GitHub Release 에서 다운로드 후 SHA-256 대조
 - 펄스 토큰 — 콩콩 콘솔 「현황·토큰 다운로드」 xlsx 2번째 시트
+  (시험용 시트는 Release v0.1.0-rc.1 에 첨부돼 있음 — exe 와 함께 다운로드)
 
 ## 1. 네트워크 연결
 
