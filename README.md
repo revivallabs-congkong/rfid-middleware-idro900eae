@@ -40,6 +40,8 @@ GOOS=windows GOARCH=amd64 go build -o dist/rfid-middleware.exe ./cmd/rfid-middle
 ## 실행 모드
 
 ```text
+rfid-middleware                                         # 인자 없음 = GUI (트레이+브라우저, 관측 모드)
+rfid-middleware gui --config config.json                # GUI, 설정 경로 지정
 rfid-middleware run --config config.json                # foreground (콘솔 로그 echo)
 rfid-middleware replay --stdin --reader gate-a --config config.json
 rfid-middleware replay --file fixture.ndjson --ndjson --reader gate-a --config config.json

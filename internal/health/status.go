@@ -8,13 +8,32 @@ import (
 	"path/filepath"
 )
 
+// StatusSchema 는 status.json 스키마 버전이다 (GUI 설계 §6.1 — v2).
+// 마커 없는(0) 파일은 구버전(v1)으로 본다.
+const StatusSchema = 2
+
 // Status 는 status.json 스냅샷이다. attendee 와 EPC, 토큰은 넣지 않는다 (설계서 §12.3).
 type Status struct {
-	UpdatedAt       string         `json:"updatedAt"`
-	SenderState     string         `json:"senderState"`
-	QueueDepth      int64          `json:"queueDepth"`
-	OldestCheckedAt string         `json:"oldestCheckedAt,omitempty"`
-	Readers         []ReaderStatus `json:"readers"`
+	Schema             int            `json:"schema,omitempty"`
+	UpdatedAt          string         `json:"updatedAt"`
+	SenderState        string         `json:"senderState"`
+	QueueDepth         int64          `json:"queueDepth"`
+	QueueNonEmptySince string         `json:"queueNonEmptySince,omitempty"`
+	OldestCheckedAt    string         `json:"oldestCheckedAt,omitempty"`
+	PID                int            `json:"pid,omitempty"`
+	Version            string         `json:"version,omitempty"`
+	Mode               string         `json:"mode,omitempty"` // service|hosting|cli
+	StartedAt          string         `json:"startedAt,omitempty"`
+	NTP                *NTPInfo       `json:"ntp,omitempty"`
+	SuccessSinceStart  int64          `json:"successSinceStart"`
+	Readers            []ReaderStatus `json:"readers"`
+}
+
+// NTPInfo 는 시계 신뢰 진단이다. SkewSec 은 HTTP Date 기반 관측값 (GUI 설계 §6.9).
+type NTPInfo struct {
+	Checked bool   `json:"checked"`
+	SkewSec int    `json:"skewSec"`
+	At      string `json:"at,omitempty"`
 }
 
 type ReaderStatus struct {
@@ -25,6 +44,10 @@ type ReaderStatus struct {
 	BoothName     string `json:"boothName,omitempty"`
 	UnitName      string `json:"unitName,omitempty"`
 	CooldownSec   int    `json:"cooldownSec,omitempty"`
+	ConnState     string `json:"connState,omitempty"` // CONNECTED|DISCONNECTED
+	ConnSince     string `json:"connSince,omitempty"`
+	SessionID     string `json:"sessionId,omitempty"`
+	Pending       int64  `json:"pending"`
 	LastTagAt     string `json:"lastTagAt,omitempty"`
 	LastSuccessAt string `json:"lastSuccessAt,omitempty"`
 }

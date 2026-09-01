@@ -35,6 +35,24 @@ type Options struct {
 	ReplayReader string
 	// DrainAndExit 는 replay 모드에서 입력 소진 + 큐 드레인 후 종료한다.
 	DrainAndExit bool
+	// Version/Mode 는 status.json v2 에 기록된다 (GUI 설계 §6.1).
+	// Mode: "service" | "hosting" | "cli" (빈 값은 cli).
+	Version string
+	Mode    string
+	// PreacquiredLock 이 nil 이 아니면 app.lock 획득을 생략하고 종료 시 이
+	// release 를 호출한다 — GUI 호스팅 모드의 잠금 위임 (GUI 설계 §6.5).
+	// AcquireLock 으로 얻은 release 를 그대로 넘긴다.
+	PreacquiredLock func()
+}
+
+// AcquireLock 은 dataDir 의 app.lock 배타 잠금을 획득한다 (모드 중재용 —
+// GUI 설계 §6.5). 성공 시 release 를 돌려주며, Run 의 PreacquiredLock 으로
+// 넘기면 Run 은 재획득하지 않는다.
+func AcquireLock(dataDir string) (func(), error) {
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		return nil, fmt.Errorf("dataDir 생성 실패: %w", err)
+	}
+	return acquireLock(filepath.Join(dataDir, "app.lock"))
 }
 
 // Run 은 ctx 취소(또는 replay drain 완료)까지 전체 파이프라인을 실행한다.
@@ -45,9 +63,13 @@ func Run(ctx context.Context, opts Options) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o755); err != nil {
 		return fmt.Errorf("dataDir 생성 실패: %w", err)
 	}
-	release, err := acquireLock(filepath.Join(cfg.DataDir, "app.lock"))
-	if err != nil {
-		return err
+	release := opts.PreacquiredLock
+	if release == nil {
+		var err error
+		release, err = acquireLock(filepath.Join(cfg.DataDir, "app.lock"))
+		if err != nil {
+			return err
+		}
 	}
 	defer release()
 
@@ -84,6 +106,12 @@ func Run(ctx context.Context, opts Options) error {
 	clk := clock.Real{}
 	gates := gate.NewRegistry()
 
+	readerIDs := make([]string, 0, len(cfg.Readers))
+	for _, r := range cfg.Readers {
+		readerIDs = append(readerIDs, r.ID)
+	}
+	tele := newTelemetry(readerIDs, clk.Now())
+
 	// 영속화된 gate 상태 복원 — suspension 은 재시작을 넘어 유지된다.
 	rows, err := st.Gates()
 	if err != nil {
@@ -116,10 +144,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	snd := sender.New(st, client, cfg, gates, clk, log, time.Duration(cfg.QueueMaxAgeHours)*time.Hour)
+	snd.OnSuccess = func(id string) { tele.success(id, clk.Now()) }
 	adm := &admission.Service{
 		Store: st, Gates: gates, Log: log,
 		Debounce: time.Duration(cfg.DebounceSec) * time.Second,
 		Wake:     snd.Wake,
+		OnTag:    func(id string) { tele.tagSeen(id, clk.Now()) },
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
@@ -169,6 +199,7 @@ func Run(ctx context.Context, opts Options) error {
 				s := session.New(session.Config{
 					ReaderID: r.ID, Addr: r.Addr,
 					PowerGain: cfg.PowerGain, Buzzer: cfg.Buzzer,
+					OnConn: func(up bool) { tele.conn(r.ID, up, clk.Now()) },
 				}, adm.Handle, log, clk)
 				s.Run(runCtx)
 			}(r)
@@ -244,30 +275,82 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}()
 
-	// status snapshot — 5초마다 atomic replace (설계서 §12.3)
+	// 시계 skew 프로브 — 기동 시 + 1시간 주기 (GUI 설계 §6.9). preflight 의
+	// Date 헤더 관측과 같은 원천이며, status ntp 로 승격된다.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			if skew, ok := client.ProbeSkew(runCtx); ok {
+				tele.setSkew(int(skew.Seconds()), clk.Now())
+			}
+			select {
+			case <-runCtx.Done():
+				return
+			case <-clk.After(time.Hour):
+			}
+		}
+	}()
+
+	// status snapshot v2 — 변경 이벤트 구동 + 5초 하트비트, atomic replace
+	// (설계서 §12.3, GUI 설계 §6.1)
 	statusPath := filepath.Join(cfg.DataDir, "status.json")
+	mode := opts.Mode
+	if mode == "" {
+		mode = "cli"
+	}
+	startedAt := clk.Now().Format(time.RFC3339)
+	fmtT := func(t time.Time) string {
+		if t.IsZero() {
+			return ""
+		}
+		return t.Format(time.RFC3339)
+	}
 	writeStatus := func() {
 		snap, global := gates.Snapshot()
 		depth, _ := st.Depth()
 		oldest, _, _ := st.OldestCheckedAt()
+		now := clk.Now()
+		rsnap, success, ntpChecked, skewSec, skewAt := tele.snapshot()
 		s := health.Status{
-			UpdatedAt:       clk.Now().Format(time.RFC3339),
-			SenderState:     string(global),
-			QueueDepth:      depth,
-			OldestCheckedAt: oldest,
+			Schema:             health.StatusSchema,
+			UpdatedAt:          now.Format(time.RFC3339),
+			SenderState:        string(global),
+			QueueDepth:         depth,
+			QueueNonEmptySince: fmtT(tele.queueDepthObserved(depth, now)),
+			OldestCheckedAt:    oldest,
+			PID:                os.Getpid(),
+			Version:            opts.Version,
+			Mode:               mode,
+			StartedAt:          startedAt,
+			SuccessSinceStart:  success,
+		}
+		if ntpChecked {
+			s.NTP = &health.NTPInfo{Checked: true, SkewSec: skewSec, At: fmtT(skewAt)}
 		}
 		for _, r := range cfg.Readers {
 			e := snap[r.ID]
+			rt := rsnap[r.ID]
+			connState := "DISCONNECTED"
+			if rt.connected {
+				connState = "CONNECTED"
+			}
+			pending, _ := st.PendingCount(r.ID)
 			s.Readers = append(s.Readers, health.ReaderStatus{
 				ID: r.ID, GateState: string(e.State), GateReason: e.Reason,
 				EventName: e.Meta.EventName, BoothName: e.Meta.BoothName,
 				UnitName: e.Meta.UnitName, CooldownSec: e.Meta.CooldownSec,
+				ConnState: connState, ConnSince: fmtT(rt.connSince),
+				SessionID: r.SessionID, Pending: pending,
+				LastTagAt: fmtT(rt.lastTagAt), LastSuccessAt: fmtT(rt.lastSuccessAt),
 			})
 		}
 		if err := health.WriteStatus(statusPath, s); err != nil {
 			log.Warnf("STATUS_WRITE_FAILED", logging.F{"message": err.Error()})
 		}
 	}
+	gateCh, gateCancel := gates.Subscribe()
+	defer gateCancel()
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -277,6 +360,7 @@ func Run(ctx context.Context, opts Options) error {
 			case <-runCtx.Done():
 				writeStatus()
 				return
+			case <-gateCh:
 			case <-clk.After(5 * time.Second):
 			}
 		}

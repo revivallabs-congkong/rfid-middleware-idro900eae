@@ -39,6 +39,9 @@ type Config struct {
 	Addr      string
 	PowerGain int
 	Buzzer    int
+	// OnConn 은 TCP 연결 확립/종료를 보고한다 (선택 — status 관측용,
+	// GUI 설계 §6.6). 짧게 반환해야 한다.
+	OnConn func(connected bool)
 }
 
 type Session struct {
@@ -84,9 +87,15 @@ func (s *Session) Run(ctx context.Context) {
 			continue
 		}
 		s.Log.Infof("READER_CONNECTED", logging.F{"readerId": s.Cfg.ReaderID, "readerAddr": s.Cfg.Addr})
+		if s.Cfg.OnConn != nil {
+			s.Cfg.OnConn(true)
+		}
 
 		inventoryEntered, err := s.serve(ctx, conn)
 		conn.Close()
+		if s.Cfg.OnConn != nil {
+			s.Cfg.OnConn(false)
+		}
 		if ctx.Err() != nil {
 			return
 		}

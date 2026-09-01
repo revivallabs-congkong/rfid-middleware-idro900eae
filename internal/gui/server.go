@@ -1,0 +1,234 @@
+package gui
+
+import (
+	"crypto/rand"
+	"embed"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+)
+
+//go:embed assets/index.html assets/app.js
+var assets embed.FS
+
+// Meta 는 /api/meta 응답이다 (GUI 설계 §4.2).
+type Meta struct {
+	Version        string `json:"version"`
+	CfgFingerprint string `json:"cfgFingerprint,omitempty"`
+	Mode           string `json:"mode"`
+	Port           int    `json:"port"`
+	ConfigPath     string `json:"configPath,omitempty"`
+	DataDir        string `json:"dataDir,omitempty"`
+	ConfigError    string `json:"configError,omitempty"`
+}
+
+type sseMsg struct {
+	event string
+	data  []byte
+}
+
+// Server 는 127.0.0.1 전용 GUI 백엔드다 (GUI 설계 §4.1).
+type Server struct {
+	nonce string
+	ln    net.Listener
+	meta  Meta
+
+	mu      sync.Mutex
+	state   State
+	subs    map[int]chan sseMsg
+	nextSub int
+
+	// ServiceControl 은 "start"|"stop" 을 수행한다 (관측 모드 — CLI+UAC).
+	ServiceControl func(action string) error
+}
+
+func NewServer(meta Meta) (*Server, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	meta.Port = ln.Addr().(*net.TCPAddr).Port
+	s := &Server{nonce: hex.EncodeToString(b), ln: ln, meta: meta, subs: map[int]chan sseMsg{}}
+	return s, nil
+}
+
+// URL 은 브라우저로 열 진입점이다 (nonce 포함 — GUI 설계 §4.1).
+func (s *Server) URL() string {
+	return fmt.Sprintf("http://127.0.0.1:%d/%s/", s.meta.Port, s.nonce)
+}
+
+func (s *Server) Serve() error {
+	mux := http.NewServeMux()
+	prefix := "/" + s.nonce
+	mux.HandleFunc(prefix+"/", s.guard(s.handleIndex))
+	mux.HandleFunc(prefix+"/app.js", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := assets.ReadFile("assets/app.js")
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Write(b)
+	}))
+	mux.HandleFunc(prefix+"/api/state", s.guard(s.handleState))
+	mux.HandleFunc(prefix+"/api/meta", s.guard(s.handleMeta))
+	mux.HandleFunc(prefix+"/api/events", s.guard(s.handleEvents))
+	mux.HandleFunc(prefix+"/api/control/service", s.guard(s.handleServiceControl))
+	// nonce 없는 모든 경로는 404 (기본 mux 동작)
+	return http.Serve(s.ln, mux)
+}
+
+// guard 는 Host 검증 + (POST) Origin 동일 출처 검증이다 (GUI 설계 §4.1, G13).
+func (s *Server) guard(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		wantHost := fmt.Sprintf("127.0.0.1:%d", s.meta.Port)
+		if r.Host != wantHost {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet {
+			if o := r.Header.Get("Origin"); o != "" && o != "http://"+wantHost {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+		}
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'")
+		h(w, r)
+	}
+}
+
+func writeOK(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true, "data": data})
+}
+
+func writeErr(w http.ResponseWriter, status int, code, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]any{
+		"ok": false, "error": map[string]string{"code": code, "message": msg},
+	})
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if !strings.HasSuffix(r.URL.Path, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	b, _ := assets.ReadFile("assets/index.html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(b)
+}
+
+func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	st := s.state
+	s.mu.Unlock()
+	writeOK(w, st)
+}
+
+func (s *Server) handleMeta(w http.ResponseWriter, r *http.Request) {
+	writeOK(w, s.meta)
+}
+
+func (s *Server) handleServiceControl(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "invalid_request", "POST 만 허용됩니다")
+		return
+	}
+	var body struct {
+		Action  string `json:"action"`
+		Confirm bool   `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "invalid_request", "본문 파싱 실패")
+		return
+	}
+	if !body.Confirm {
+		writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+		return
+	}
+	if body.Action != "start" && body.Action != "stop" {
+		writeErr(w, 400, "invalid_request", "action 은 start|stop")
+		return
+	}
+	if s.ServiceControl == nil {
+		writeErr(w, 400, "invalid_request", "이 모드에서는 서비스 제어를 지원하지 않습니다")
+		return
+	}
+	if err := s.ServiceControl(body.Action); err != nil {
+		writeErr(w, 500, "uac_denied", "실행 실패: "+err.Error())
+		return
+	}
+	writeOK(w, map[string]string{"action": body.Action})
+}
+
+// PushState 는 상태를 갱신하고 SSE 구독자에게 알린다.
+func (s *Server) PushState(st State) {
+	b, err := json.Marshal(st)
+	if err != nil {
+		return
+	}
+	s.mu.Lock()
+	s.state = st
+	s.mu.Unlock()
+	s.broadcast(sseMsg{event: "state", data: b})
+}
+
+// PushLog 는 마스킹된 로그 1행을 SSE 로 보낸다.
+func (s *Server) PushLog(line []byte) {
+	s.broadcast(sseMsg{event: "log", data: maskLogLine(line)})
+}
+
+func (s *Server) broadcast(m sseMsg) {
+	s.mu.Lock()
+	for _, ch := range s.subs {
+		select {
+		case ch <- m:
+		default: // 느린 구독자는 드랍 — 코어/관측 루프를 블록하지 않는다
+		}
+	}
+	s.mu.Unlock()
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, 500, "internal", "streaming 미지원")
+		return
+	}
+	ch := make(chan sseMsg, 256)
+	s.mu.Lock()
+	id := s.nextSub
+	s.nextSub++
+	s.subs[id] = ch
+	st := s.state
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.subs, id)
+		s.mu.Unlock()
+	}()
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	// 접속 즉시 현재 상태 1회
+	if b, err := json.Marshal(st); err == nil {
+		fmt.Fprintf(w, "event: state\ndata: %s\n\n", b)
+		fl.Flush()
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case m := <-ch:
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", m.event, m.data)
+			fl.Flush()
+		}
+	}
+}

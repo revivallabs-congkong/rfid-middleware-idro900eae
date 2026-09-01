@@ -30,6 +30,9 @@ type Sender struct {
 	Clock  clock.Clock
 	Log    *logging.Logger
 	MaxAge time.Duration // queueMaxAgeHours
+	// OnSuccess 는 체크인 확정(200/409 Complete) 관측 콜백이다 (선택 —
+	// lastSuccessAt·successSinceStart 기록용, GUI 설계 §6.1).
+	OnSuccess func(readerID string)
 
 	wake chan struct{}
 }
@@ -161,6 +164,9 @@ func (s *Sender) deliver(ctx context.Context, item *domain.QueueItem, now time.T
 			return
 		}
 		s.Log.Infof("SEND_RESULT", fields)
+		if s.OnSuccess != nil {
+			s.OnSuccess(item.ReaderID)
+		}
 
 	case domain.DecisionDrop:
 		if err := s.Store.Complete(item.ID); err != nil {

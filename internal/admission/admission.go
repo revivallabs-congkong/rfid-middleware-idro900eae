@@ -18,10 +18,16 @@ type Service struct {
 	Debounce time.Duration
 	// Wake 는 새 enqueue 를 sender 에 알린다.
 	Wake func()
+	// OnTag 는 태그 수신 관측 콜백이다 (선택 — lastTagAt 기록용, GUI 설계 §6.1).
+	// debounce 여부와 무관하게 리더가 태그를 보고 있음을 뜻한다.
+	OnTag func(readerID string)
 }
 
 // Handle 은 파싱된 TagRead 1건을 처리한다. 어떤 실패도 panic 하지 않는다.
 func (s *Service) Handle(read domain.TagRead) {
+	if s.OnTag != nil {
+		s.OnTag(read.ReaderID)
+	}
 	// suspended token 에는 새 queue 행을 만들지 않는다 (불변식 10).
 	if s.Gates.Suspended(read.ReaderID) {
 		s.Log.Warnf("SCAN_DROPPED_SUSPENDED", logging.F{

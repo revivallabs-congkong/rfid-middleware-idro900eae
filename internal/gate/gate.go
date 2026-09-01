@@ -24,8 +24,12 @@ type Registry struct {
 	mu      sync.RWMutex
 	entries map[string]Entry
 	global  domain.SenderState
-	// changed 는 상태 변화 알림 채널이다 (sender 가 즉시 재조회).
+	// changed 는 sender 전용 단일 소비자 채널이다 (버퍼 1). GUI 등 다른
+	// 관측자는 Subscribe 를 써야 한다 — changed 를 읽으면 sender 깨우기
+	// 신호를 훔친다 (GUI 설계 §6.6).
 	changed chan struct{}
+	subs    map[int]chan struct{}
+	nextSub int
 }
 
 func NewRegistry() *Registry {
@@ -33,17 +37,42 @@ func NewRegistry() *Registry {
 		entries: map[string]Entry{},
 		global:  domain.SenderRunning,
 		changed: make(chan struct{}, 1),
+		subs:    map[int]chan struct{}{},
 	}
 }
 
-// Changed 는 상태 변화 신호 채널이다.
+// Changed 는 상태 변화 신호 채널이다 (sender 전용 — 위 주석 참조).
 func (r *Registry) Changed() <-chan struct{} { return r.changed }
+
+// Subscribe 는 다중 관측자용 coalesced 알림 채널을 돌려준다. cancel 을
+// 호출하면 구독이 해제된다. sender 의 Changed 와 독립이다.
+func (r *Registry) Subscribe() (<-chan struct{}, func()) {
+	ch := make(chan struct{}, 1)
+	r.mu.Lock()
+	id := r.nextSub
+	r.nextSub++
+	r.subs[id] = ch
+	r.mu.Unlock()
+	return ch, func() {
+		r.mu.Lock()
+		delete(r.subs, id)
+		r.mu.Unlock()
+	}
+}
 
 func (r *Registry) notify() {
 	select {
 	case r.changed <- struct{}{}:
 	default:
 	}
+	r.mu.RLock()
+	for _, ch := range r.subs {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
+	r.mu.RUnlock()
 }
 
 // Init 은 기동 시 영속화된 상태를 복원한다 (persist 없이).

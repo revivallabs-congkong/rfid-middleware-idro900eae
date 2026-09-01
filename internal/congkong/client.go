@@ -46,6 +46,15 @@ func New(apiHost string, timeout time.Duration) (*Client, error) {
 	}, nil
 }
 
+// ProbeSkew 는 서버 Date 헤더와 로컬 시각의 차이를 잰다 (GUI 설계 §6.9).
+// 토큰 없는 무해 GET 1회 — 상태 코드는 무관하고 Date 헤더만 쓴다.
+func (c *Client) ProbeSkew(ctx context.Context) (time.Duration, bool) {
+	u := *c.base
+	u.Path = "/v3"
+	res := c.do(ctx, "GET", u.String(), nil)
+	return res.DateSkew, res.HasDateSkew
+}
+
 // tokenPath 는 token 원문이 URL 에 들어가는 유일한 지점이다.
 func (c *Client) tokenPath(token domain.Secret, suffix string) string {
 	u := *c.base

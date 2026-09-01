@@ -17,6 +17,7 @@ import (
 
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/app"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/config"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/gui"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/health"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/winsvc"
 )
@@ -26,6 +27,8 @@ var version = "dev" // -ldflags "-X main.version=..." 로 주입
 const usage = `rfid-middleware — IDRO900EAE → CongKong 체크인 미들웨어
 
 사용법:
+  rfid-middleware                 # 인자 없음 = GUI (트레이 + 브라우저 상태 화면)
+  rfid-middleware gui [--config <path>]
   rfid-middleware run --config <path>
   rfid-middleware replay --stdin --reader <id> --config <path> [--drain]
   rfid-middleware replay --file <fixture> [--ndjson] --reader <id> --config <path> [--drain]
@@ -45,10 +48,14 @@ func main() {
 
 func run(args []string) error {
 	if len(args) < 1 {
-		fmt.Print(usage)
-		return fmt.Errorf("명령이 필요합니다")
+		// 인자 없음 = GUI (더블클릭 기동 — GUI 설계 §7.1)
+		return cmdGUI(nil)
 	}
+	// 인자 있음 = CLI. windowsgui 빌드에서는 부모 콘솔에 붙는다 (M0 확인).
+	gui.AttachConsole()
 	switch args[0] {
+	case "gui":
+		return cmdGUI(args[1:])
 	case "run":
 		return cmdRun(args[1:])
 	case "replay":
@@ -98,12 +105,32 @@ func cmdRun(args []string) error {
 	if winsvc.IsWindowsService() {
 		// Windows Service — echo 없이, SCM 수명주기로 실행 (설계서 §11.2)
 		return winsvc.RunAsService(func(ctx context.Context) error {
-			return app.Run(ctx, app.Options{Cfg: cfg})
+			return app.Run(ctx, app.Options{Cfg: cfg, Version: version, Mode: "service"})
 		})
 	}
 	ctx, cancel := signalContext()
 	defer cancel()
-	return app.Run(ctx, app.Options{Cfg: cfg, Echo: os.Stdout})
+	return app.Run(ctx, app.Options{Cfg: cfg, Echo: os.Stdout, Version: version, Mode: "cli"})
+}
+
+func cmdGUI(args []string) error {
+	fs := flag.NewFlagSet("gui", flag.ContinueOnError)
+	cfgPath := fs.String("config", "", "설정 파일 경로 (기본: exe 옆 config.json)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	path := *cfgPath
+	if path == "" {
+		exe, err := os.Executable()
+		if err == nil {
+			path = filepath.Join(filepath.Dir(exe), "config.json")
+		} else {
+			path = "config.json"
+		}
+	}
+	ctx, cancel := signalContext()
+	defer cancel()
+	return gui.Run(ctx, gui.Options{ConfigPath: path, Version: version})
 }
 
 func cmdReplay(args []string) error {

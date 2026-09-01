@@ -34,20 +34,26 @@ type wire struct {
 	PowerGain         *int         `json:"powerGain"`
 	Buzzer            *int         `json:"buzzer"`
 	LogLevel          string       `json:"logLevel"`
-	Readers           []wireReader `json:"readers"`
+	// SessionsFile 은 GUI 세션 카탈로그(pulse-sessions.json) 경로다 (선택,
+	// GUI 설계 §3.3). 코어는 로드·보존만 한다.
+	SessionsFile string       `json:"sessionsFile,omitempty"`
+	Readers      []wireReader `json:"readers"`
 }
 
 type wireReader struct {
 	ID         string `json:"id"`
 	Addr       string `json:"addr"`
 	PulseToken string `json:"pulseToken"`
+	// SessionID 는 GUI 세션 매칭의 표시·대조용 주석이다 (선택, GUI 설계 §3.5).
+	SessionID string `json:"sessionId,omitempty"`
 }
 
 // Reader 는 검증이 끝난 리더 설정 1개다.
 type Reader struct {
-	ID    string
-	Addr  string
-	Token domain.Secret
+	ID        string
+	Addr      string
+	Token     domain.Secret
+	SessionID string
 }
 
 // Config 는 검증이 끝난 실행 설정이다.
@@ -60,6 +66,7 @@ type Config struct {
 	PowerGain         int
 	Buzzer            int
 	LogLevel          string
+	SessionsFile      string
 	Readers           []Reader
 }
 
@@ -119,6 +126,7 @@ func validate(w *wire) (*Config, error) {
 		PowerGain:         300,
 		Buzzer:            0,
 		LogLevel:          "info",
+		SessionsFile:      w.SessionsFile,
 	}
 
 	if w.DebounceSec != nil {
@@ -202,7 +210,7 @@ func validate(w *wire) (*Config, error) {
 		}
 		seenToken[tok] = true
 
-		cfg.Readers = append(cfg.Readers, Reader{ID: r.ID, Addr: r.Addr, Token: domain.NewSecret(tok)})
+		cfg.Readers = append(cfg.Readers, Reader{ID: r.ID, Addr: r.Addr, Token: domain.NewSecret(tok), SessionID: r.SessionID})
 	}
 
 	if len(errs) > 0 {
