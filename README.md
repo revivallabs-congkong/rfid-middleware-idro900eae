@@ -68,8 +68,8 @@ rfid-middleware service install|uninstall|start|stop --config config.json   # Wi
 | `debounceSec` | 60 | 1~3600 |
 | `queueMaxAgeHours` | 24 | 1~24 (서버 `CheckedAtMaxAge` 계약) |
 | `requestTimeoutSec` | 10 | 1~30 |
-| `powerGain` | 300 | 50~300 |
-| `buzzer` | 0 | 0/1 |
+| `powerGain` | 300 | 50~300, **0.1dBm 단위** (300=30dBm). 오인식(원거리 태그) 시 하향 |
+| `buzzer` | 0 | **0=무음(기본), 1=비프음**. 접속 초기화 때마다 리더에 반영 |
 | `readers[]` | (필수 1~8) | `id`, `addr`(host:port), `pulseToken`(64 hex) |
 
 리더 TCP 데이터 포트는 벤더 문서에 명시가 없으나 **`5578` 로 확인됨**
@@ -96,6 +96,10 @@ icacls "C:\ProgramData\CongKong\RFIDMiddleware\config.json" /inheritance:r `
 
 ## 운영 메모
 
+- **`READER_CONNECTED`↔`READER_DISCONNECTED` 반복 (`INIT_VERSION 응답 timeout`)**:
+  다른 프로그램(YAT 등 터미널)이 리더 데이터 포트를 점유 중이면 TCP 접속은 되지만
+  응답이 오지 않아 이 패턴이 된다. 다른 클라이언트를 완전히 종료하고 **리더 전원을
+  재투입**하면 자동 복구된다 (2026-09-01 현장 확인).
 - **토큰 회수(404)**: 해당 리더만 송신 중단(`SUSPENDED_TOKEN`)되고 반복 ERROR 가 남는다.
   새 토큰 설정 → 서비스 중지 → `queue resume` → 서비스 시작으로만 재개한다.
   회수~재발급 사이의 스캔은 큐에 적재되지 않는다(의도된 동작).
