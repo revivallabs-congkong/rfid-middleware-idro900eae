@@ -17,6 +17,9 @@ Windows 상주 프로그램. Go 단일 바이너리, CGO 없음.
 
 1. `config.example.json` 을 `config.json` 으로 복사하고 `addr`(리더 IP:데이터포트),
    `pulseToken`(운영진에게 발급받은 64자 hex), `dataDir` 를 채운다.
+   토큰은 콩콩 콘솔에서 전달받는다 — 게이트(부스) 화면 펄스 토큰 섹션의
+   **「URL 복사」**(토큰 포함 URL), 또는 세션 펄스 목록의 **「현황·토큰 다운로드」**
+   xlsx 2번째 시트(게이트·유닛·토큰·URL 일괄). 받은 파일·URL 은 이 저장소에 넣지 않는다.
 2. `rfid-middleware validate-config --config config.json` 으로 검증한다.
 3. 개발 PC 에서는 `run` 으로 foreground 실행, 현장 노트북에서는 아래
    [Windows 설치](#windows-설치-관리자-powershell)대로 서비스 등록한다.
