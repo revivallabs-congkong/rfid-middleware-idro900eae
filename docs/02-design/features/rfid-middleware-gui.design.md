@@ -46,6 +46,9 @@ GUI: 파일 로드·감시 ──세션 선택──▶ 토큰 자동 매칭 ─
 
 ### 3.2 파일 양식 v1 (SSOT — congkong-v3 내보내기 계약)
 
+> 서버 측 구현 브리프: `congkong-v3/docs/features/pulse/pulse-sessions-export-brief.ko.md`
+> — 양식 변경 시 두 문서를 함께 갱신한다.
+
 **파일명** `pulse-sessions.json`, **인코딩** UTF-8(BOM 없음), **형식** JSON.
 
 ```json
