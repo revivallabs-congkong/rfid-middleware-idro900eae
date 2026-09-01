@@ -69,9 +69,9 @@ rfid-middleware service install|uninstall|start|stop --config config.json   # Wi
 | `buzzer` | 0 | 0/1 |
 | `readers[]` | (필수 1~8) | `id`, `addr`(host:port), `pulseToken`(64 hex) |
 
-⚠️ 리더 TCP 데이터 포트는 벤더 문서에 명시가 없다. 예시 기본값은 `5578` 이며,
-**현장에서 실제 포트를 확인해** 다르면 `addr` 를 수정한다 (실장비 단계에서 검증 후
-SSOT `IDRO900EAE-settings.md` §2.1 에 확정값 기입). `PORT` 같은 미확정
+리더 TCP 데이터 포트는 벤더 문서에 명시가 없으나 **`5578` 로 확인됨**
+(2026-09-01, SSOT `IDRO900EAE-settings.md` §2.1). 리더 IP 를 현장 대역에 맞춰
+변경한 경우에만 `addr` 의 host 부분을 수정하면 된다. `PORT` 같은 미확정
 placeholder 는 설정 검증에서 거부된다.
 
 ## Windows 설치 (관리자 PowerShell)

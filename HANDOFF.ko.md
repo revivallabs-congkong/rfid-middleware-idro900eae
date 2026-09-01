@@ -31,7 +31,7 @@
    - `rfid-middleware replay --stdin --reader <id> --config <실토큰 설정>` 으로 프로토콜 §10 체크리스트 1~3 확인
    - ⚠️ 실토큰은 저장소·테스트 리포트에 기록 금지
 3. **실장비 통합 (계획서 단계 3)**
-   - **IDRO900EAE TCP 데이터 포트 현장 확인** (벤더 문서에 없음) → `IDRO900EAE-settings.md` §2.1 표와 dev-spec §8 에 기입
+   - ~~IDRO900EAE TCP 데이터 포트 확인~~ ✅ **`5578` 확정** (2026-09-01) — settings §2.1·dev-spec §8·config.example.json 반영 완료
    - 실태그 EPC 가 페어링 값과 같은 계열인지 확인, 전원 재투입/절단/10초 유지 시험 (RDR1~RDR3)
    - 관측한 raw 리더 라인을 `testdata/reader-lines/` 회귀 픽스처로 추가
 4. **Windows 상주화·출시 (계획서 단계 4)**
