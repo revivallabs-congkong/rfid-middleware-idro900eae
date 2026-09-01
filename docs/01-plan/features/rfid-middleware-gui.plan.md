@@ -82,7 +82,7 @@
 | FR-14 | 마법사 4단계(선택): 오프라인 차단→복구 재생 — HANDOFF §10 항목 5를 상시 재현 가능하게 | Medium | Pending |
 | FR-15 | 마법사 5단계: pass/warn/fail 요약 리포트 + 원클릭 내보내기 (logging 금칙 필드 정책 경유) | High | Pending |
 | FR-16 | 마법사 불변식: 운영 큐·gate 불변경, 실체크인은 명시적 확인 후에만 | High | Pending |
-| FR-17 | 세션 카탈로그: 사람이 `pulse-sessions.json` 파일을 교체/갱신하면 GUI 목록에 반영 (mtime 감시 + 새로고침) | High | Pending |
+| FR-17 | 세션 카탈로그: `pulse-sessions.json` 덮어쓰기 시 **상시 감시로 즉시 반영**, Downloads 폴더 신규 파일 자동 감지 + 원클릭 가져오기(이동) | High | Pending |
 | FR-18 | GUI에서 리더별 세션 선택 → **토큰 자동 매칭**(카탈로그에서 주입) → config 반영 → preflight로 boothName/unitName 교차 검증 | High | Pending |
 | FR-19 | 카탈로그 양식 v1 준수 (§6.4, congkong-v3 콘솔이 이 양식으로 내보냄). 미들웨어는 알 수 없는 필드 무시(관용 파싱) | High | Pending |
 | FR-20 | 세션 목록·화면 어디에도 토큰 전문 미표시 (fingerprint 8자만) | High | Pending |
