@@ -63,7 +63,16 @@ main{max-width:1080px;margin:0 auto;padding:22px 20px 56px}
 .chip.on{background:var(--live-soft);border-color:transparent;color:#0a6f4c}.chip.on .cdot{background:var(--live)}
 .chip.off{background:var(--alert-soft);border-color:transparent;color:#a32d31}.chip.off .cdot{background:var(--alert)}
 .chip.wait{background:var(--warn-soft);border-color:transparent;color:#8a5700}.chip.wait .cdot{background:var(--warn)}
-.band .act{margin-left:auto}
+.band .act{margin-left:auto;display:flex;align-items:center;gap:10px}
+.swstate{font-size:13px;font-weight:600;color:var(--ink-soft)}
+.sw{position:relative;width:52px;height:30px;border-radius:999px;border:0;padding:0;
+  background:var(--idle);cursor:pointer;transition:background .2s;flex:none}
+.sw .knob{position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s}
+.sw.on{background:var(--live)}
+.sw.on .knob{transform:translateX(22px)}
+.sw:focus-visible{outline:2.5px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.sw,.sw .knob{transition:none}}
 
 /* ── buttons ── */
 .btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);

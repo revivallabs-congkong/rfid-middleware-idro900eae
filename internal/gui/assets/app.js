@@ -67,12 +67,13 @@ function renderState(st){
   chip($('chipCollect'),st.collecting?'on':'off',st.collecting?'수집 중':'수집 중지');
   chip($('chipNet'),st.network==='online'?'on':st.network==='offline'?'off':'wait',
     st.network==='online'?'인터넷 연결됨':st.network==='offline'?'인터넷 끊김':'인터넷 확인 중');
-  // 수집 토글 — 운영 화면에서 시작/중지 (항상 표시)
-  const act=$('bandAct');act.innerHTML='';
-  const toggle=document.createElement('button');
-  if(st.coreRunning){toggle.className='btn';toggle.textContent='수집 중지';toggle.onclick=()=>toggleCollect(false);}
-  else{toggle.className='btn primary lg';toggle.textContent='수집 시작';toggle.onclick=()=>toggleCollect(true);}
-  act.appendChild(toggle);
+  // 수집 토글 스위치 — 운영 화면에서 켜기/끄기 (항상 표시)
+  const on=!!st.coreRunning;
+  $('bandAct').innerHTML=
+    '<span class="swstate">'+(on?'수집 중':'꺼짐')+'</span>'+
+    '<button class="sw'+(on?' on':'')+'" id="collectSw" role="switch" aria-checked="'+on+'" '+
+    'aria-label="수집 '+(on?'중지':'시작')+'"><span class="knob"></span></button>';
+  $('collectSw').onclick=()=>toggleCollect(!on);
   renderReaders(st);
   renderCtrl(st);
   renderCatalogBanners(st);
