@@ -253,7 +253,7 @@ func (s *Server) guard(h http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:")
 		h(w, r)
 	}
 }

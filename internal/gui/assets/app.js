@@ -53,6 +53,10 @@ function toggleCollect(on){
   if(META.mode==='hosting')coreCtl(on?'start':'stop',on?'수집을 시작':'수집을 중지');
   else svcCtl(on?'start':'stop',on?'시작':'중지');
 }
+function goToSession(){
+  setMode('setup');loadCatalog();loadConfig();
+  const b=document.querySelector('.tabs button[data-tab=session]');if(b)b.click();
+}
 function renderState(st){
   LAST_STATE=st;
   const sig=st.signal||'idle';
@@ -67,13 +71,18 @@ function renderState(st){
   chip($('chipCollect'),st.collecting?'on':'off',st.collecting?'수집 중':'수집 중지');
   chip($('chipNet'),st.network==='online'?'on':st.network==='offline'?'off':'wait',
     st.network==='online'?'인터넷 연결됨':st.network==='offline'?'인터넷 끊김':'인터넷 확인 중');
-  // 수집 토글 스위치 — 운영 화면에서 켜기/끄기 (항상 표시)
-  const on=!!st.coreRunning;
-  $('bandAct').innerHTML=
-    '<span class="swstate">'+(on?'수집 중':'꺼짐')+'</span>'+
-    '<button class="sw'+(on?' on':'')+'" id="collectSw" role="switch" aria-checked="'+on+'" '+
-    'aria-label="수집 '+(on?'중지':'시작')+'"><span class="knob"></span></button>';
-  $('collectSw').onclick=()=>toggleCollect(!on);
+  // 세션 미지정이면 토글 대신 세션 선택 유도
+  const act=$('bandAct');
+  if(st.needsSession){
+    act.innerHTML='<button class="btn primary lg" id="goSession">세션 선택</button>';
+    $('goSession').onclick=goToSession;
+  }else{
+    const on=!!st.coreRunning;
+    act.innerHTML='<span class="swstate">'+(on?'수집 중':'꺼짐')+'</span>'+
+      '<button class="sw'+(on?' on':'')+'" id="collectSw" role="switch" aria-checked="'+on+'" '+
+      'aria-label="수집 '+(on?'중지':'시작')+'"><span class="knob"></span></button>';
+    $('collectSw').onclick=()=>toggleCollect(!on);
+  }
   renderReaders(st);
   renderCtrl(st);
   renderCatalogBanners(st);
@@ -359,6 +368,7 @@ $('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'재개':'�
 $('cfgEdit').onclick=()=>{cfgEditing=!cfgEditing;renderConfig();};
 
 /* ── init ── */
+try{const fav=document.querySelector('link[rel=icon]');if(fav)$('blogo').src=fav.href;}catch{}
 try{setMode(localStorage.getItem('ck_mode')||'monitor');}catch{setMode('monitor');}
 fetch('api/meta').then(r=>r.json()).then(({data})=>{
   META=data;$('meta').textContent=(data.version||'')+(data.cfgFingerprint?' · cfg '+data.cfgFingerprint:'');

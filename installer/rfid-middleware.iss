@@ -27,6 +27,7 @@ PrivilegesRequired=admin
 WizardStyle=modern
 UninstallDisplayName=CongKong RFID Middleware
 UninstallDisplayIcon={app}\rfid-middleware.exe
+SetupIconFile=congkong.ico
 
 [Languages]
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"

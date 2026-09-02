@@ -252,6 +252,10 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 	if ga.ring != nil {
 		st.LogDropped = ga.ring.Dropped()
 	}
+	// 유효한 세션(토큰) 미지정 — 설치 직후 placeholder 상태
+	needsSession := !ga.hasValidSession()
+	st.NeedsSession = needsSession
+
 	// 호스팅인데 코어가 안 돌면: 대기(정상) vs 크래시(오류) 구분
 	if ga.mode == "hosting" && ga.core != nil && !ga.core.Running() {
 		st.CoreRunning = false
@@ -264,12 +268,21 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 			if e := ga.core.LastErr(); e != "" {
 				st.Headline = "수집이 멈췄습니다 — " + e
 			}
+		} else if needsSession {
+			// 세션 미지정 — 먼저 세션을 고르도록 안내(대기와 구분)
+			st.Signal = "idle"
+			st.Standby = true
+			st.Headline = "세션 미지정 — [점검·설정 › 세션]에서 세션을 먼저 선택하세요"
 		} else {
 			// 대기 상태 — 차분하게, [수집 시작] 유도
 			st.Signal = "idle"
 			st.Standby = true
 			st.Headline = "수집 대기 중 — [수집 시작]을 누르면 체크인을 받습니다"
 		}
+	} else if needsSession && st.Collecting {
+		// 세션 없이 억지로 수집 중(서비스 자동 시작 등) — 명확히 안내
+		st.Signal = "yellow"
+		st.Headline = "세션 미지정 — 체크인이 기록되지 않습니다. 세션을 선택하세요"
 	}
 	if ga.mgr == nil {
 		return
@@ -436,9 +449,32 @@ func (ga *guiApp) resume(readerID, pending, sessionID string) (any, *apiError) {
 	return applyResult{Message: "재개했습니다 — 서버 확인 중"}, nil
 }
 
+// zeroToken 은 config.example 의 placeholder(전부 0)다 — 세션 미지정 상태.
+const zeroToken = "0000000000000000000000000000000000000000000000000000000000000000"
+
+// hasValidSession 은 리더 중 하나라도 실제 토큰(placeholder 아님)을 가졌는지다.
+func (ga *guiApp) hasValidSession() bool {
+	ga.mu.Lock()
+	cfg := ga.cfg
+	ga.mu.Unlock()
+	if cfg == nil {
+		return false
+	}
+	for _, r := range cfg.Readers {
+		if t := r.Token.Raw(); t != "" && t != zeroToken {
+			return true
+		}
+	}
+	return false
+}
+
 func (ga *guiApp) coreControl(action string) *apiError {
 	if ga.mode != "hosting" {
 		return &apiError{"invalid_request", "호스팅 모드에서만 지원합니다"}
+	}
+	if (action == "start" || action == "restart") && !ga.hasValidSession() {
+		return &apiError{"conflict_busy",
+			"세션이 지정되지 않았습니다 — [점검·설정 › 세션]에서 세션을 먼저 선택하세요"}
 	}
 	var err error
 	switch action {

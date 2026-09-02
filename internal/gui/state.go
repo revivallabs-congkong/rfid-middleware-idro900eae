@@ -25,6 +25,7 @@ type State struct {
 	CoreMode          string               `json:"coreMode,omitempty"`
 	Collecting        bool                 `json:"collecting"`        // 수집 중(코어 실행 + 전역 halt 아님)
 	Standby           bool                 `json:"standby"`           // 수집 대기(운영자가 아직 켜지 않음)
+	NeedsSession      bool                 `json:"needsSession"`      // 유효한 세션(토큰) 미지정 — 수집 시작 불가
 	Network           string               `json:"network"`           // online | offline | unknown
 	NetworkText       string               `json:"networkText"`
 	SuccessSinceStart int64                `json:"successSinceStart"`
@@ -50,6 +51,7 @@ type ReaderView struct {
 	SessionName     string `json:"sessionName,omitempty"`
 	SessionVerified bool   `json:"sessionVerified,omitempty"`
 	UpdateAvailable bool   `json:"updateAvailable,omitempty"`
+	NeedsSession    bool   `json:"needsSession,omitempty"`
 	ConnState     string `json:"connState"`
 	ConnSince     string `json:"connSince,omitempty"`
 	GateState     string `json:"gateState"`
