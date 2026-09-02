@@ -69,7 +69,10 @@ func RunAsService(run func(ctx context.Context) error) error {
 	return svc.Run(ServiceName, &appHandler{run: run})
 }
 
-// Install 은 서비스를 등록한다: Automatic (Delayed Start) + 실패 복구 재시작.
+// Install 은 서비스를 수동 시작으로 등록한다(자동 시작 안 함) + 실패 복구.
+// StartManual — 부팅 시 자동으로 켜지지 않는다. 최초 실행은 사람이 콘솔에서
+// 수집을 켠다. 서비스는 운영자가(또는 GUI 가) 명시적으로 시작할 때만 돈다.
+// 이미 설치돼 있으면 설정을 갱신한다(예: 이전 Automatic → Manual 로 교정).
 func Install(configPath string) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -90,23 +93,32 @@ func Install(configPath string) error {
 	}
 	defer m.Disconnect()
 
-	if s, err := m.OpenService(ServiceName); err == nil {
-		s.Close()
-		return fmt.Errorf("서비스 %s 가 이미 설치돼 있음", ServiceName)
-	}
-
-	s, err := m.CreateService(ServiceName, exe, mgr.Config{
-		DisplayName:      "CongKong RFID Middleware",
-		Description:      "IDRO900EAE UHF RFID 태그를 CongKong 체크인 API 로 전달하는 미들웨어",
-		StartType:        mgr.StartAutomatic,
-		DelayedAutoStart: true,
-	}, "run", "--config", absCfg)
-	if err != nil {
-		return fmt.Errorf("서비스 생성 실패: %w", err)
+	var s *mgr.Service
+	if existing, oerr := m.OpenService(ServiceName); oerr == nil {
+		// 기존 서비스 — 자동 시작 상태로 남아 있을 수 있으므로 Manual 로 갱신.
+		s = existing
+		cfg, cerr := s.Config()
+		if cerr == nil {
+			cfg.StartType = mgr.StartManual // 자동 시작 → 수동 으로 교정
+			cfg.DelayedAutoStart = false
+			if uerr := s.UpdateConfig(cfg); uerr != nil {
+				s.Close()
+				return fmt.Errorf("기존 서비스 갱신 실패: %w", uerr)
+			}
+		}
+	} else {
+		s, err = m.CreateService(ServiceName, exe, mgr.Config{
+			DisplayName: "CongKong RFID Middleware",
+			Description: "IDRO900EAE UHF RFID 태그를 CongKong 체크인 API 로 전달하는 미들웨어",
+			StartType:   mgr.StartManual,
+		}, "run", "--config", absCfg)
+		if err != nil {
+			return fmt.Errorf("서비스 생성 실패: %w", err)
+		}
 	}
 	defer s.Close()
 
-	// 실패 복구: 1분 후 재시작 3회, 이후에도 재시작 유지 (설계서 §11.2).
+	// 실패 복구: 돌던 중 죽으면 1분 후 재시작 3회, 이후에도 재시작 유지.
 	err = s.SetRecoveryActions([]mgr.RecoveryAction{
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
 		{Type: mgr.ServiceRestart, Delay: time.Minute},
