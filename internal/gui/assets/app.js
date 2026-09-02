@@ -105,6 +105,7 @@ function renderState(st) {
     : '';
   renderCtrl(st);
   renderCatalogBanners(st);
+  refreshWizardIfIdle();
 }
 
 function renderCtrl(st) {
@@ -285,12 +286,27 @@ async function loadWizard() {
   const j = await api('api/wizard');
   if (j.ok) { WIZ = j.data; renderWizard(); }
 }
+// 리더 목록 소스 — config(항상 존재) 우선, 없으면 실행 상태(status.json)에서.
+function wizardReaderIds() {
+  const fromCfg = (CFG?.config?.readers || []).map(r => r.id).filter(Boolean);
+  if (fromCfg.length) return fromCfg;
+  return (LAST_STATE?.readers || []).map(r => r.id).filter(Boolean);
+}
+// 마법사 시작 화면이 떠 있으면(대기 상태) 리더 목록이 채워지도록 다시 그린다.
+function refreshWizardIfIdle() {
+  if (WIZ && !WIZ.running && (!WIZ.steps || WIZ.steps.length === 0)) renderWizard();
+}
 function renderWizard() {
   const el = $('wizard');
   const w = WIZ || {};
   if (!w.running && (!w.steps || w.steps.length === 0)) {
     // 시작 화면
-    const ropts = (LAST_STATE?.readers || []).map(r => '<option value="' + esc(r.id) + '">' + esc(r.id) + '</option>').join('');
+    const rids = wizardReaderIds();
+    if (rids.length === 0) {
+      el.innerHTML = '<div class="banner warn">리더 정보를 불러오는 중입니다. 설정에 리더가 없으면 [설정] 탭에서 추가하세요.</div>';
+      return;
+    }
+    const ropts = rids.map(id => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('');
     const chks = STEP_DEFS.map(([id, t]) =>
       '<label style="margin-right:10px"><input type="checkbox" class="wchk" value="' + id + '"' +
       (id !== '4' ? ' checked' : '') + '> ' + t + '</label>').join('');
@@ -347,7 +363,7 @@ function startWizard() {
 let CFG = null, cfgEditing = false;
 async function loadConfig() {
   const j = await api('api/config');
-  if (j.ok) { CFG = j.data; renderConfig(); }
+  if (j.ok) { CFG = j.data; renderConfig(); refreshWizardIfIdle(); }
 }
 function renderConfig() {
   const el = $('cfgView');
