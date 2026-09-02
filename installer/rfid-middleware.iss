@@ -39,8 +39,10 @@ Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
 Source: "..\config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
-; 데이터 폴더 — 큐 DB·로그·config·status. 설치 사용자(비관리자)도 쓸 수 있게 Modify 부여.
-Name: "{#DataDir}"; Permissions: users-modify
+; 데이터 폴더 — 큐 DB·로그·config·status. 설치 사용자(비관리자)도 쓸 수 있게
+; Users + Authenticated Users 에 Modify 부여 (권한 문제로 로그·카탈로그·수집이
+; 안 되는 것을 방지). [Run] 에서 icacls 로 한 번 더 확실히 부여한다.
+Name: "{#DataDir}"; Permissions: users-modify authusers-modify
 
 [Tasks]
 Name: "svc"; Description: "무인 상주 서비스로 등록 (행사장에 두고 무인 운영할 때)"; GroupDescription: "설치 옵션:"; Flags: unchecked
@@ -53,6 +55,8 @@ Name: "{group}\CongKong RFID 콘솔 제거"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\CongKong RFID 콘솔"; Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
+; 데이터 폴더에 사용자 쓰기 권한을 확실히 부여 (icacls — [Dirs] 보완).
+Filename: "icacls"; Parameters: """{#DataDir}"" /grant *S-1-5-32-545:(OI)(CI)M /T /C"; Flags: runhidden; StatusMsg: "데이터 폴더 권한 설정 중..."
 ; 서비스 등록 (옵션). config.json 은 [Code] ssPostInstall 에서 이미 준비됨.
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service install --config ""{#ConfigPath}"""; Flags: runhidden waituntilterminated; Tasks: svc; StatusMsg: "서비스를 등록하는 중..."
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service start"; Flags: runhidden waituntilterminated; Tasks: svc

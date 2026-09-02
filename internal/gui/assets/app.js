@@ -391,6 +391,10 @@ try{setMode(localStorage.getItem('ck_mode')||'monitor');}catch{setMode('monitor'
 fetch('api/meta').then(r=>r.json()).then(({data})=>{
   META=data;$('meta').textContent=(data.version||'')+(data.cfgFingerprint?' · cfg '+data.cfgFingerprint:'');
   if(data.configError)toast('설정 파일을 읽을 수 없습니다 — [설정]에서 확인하세요');
+  if(data.dataDirError){
+    const h=$('headline');if(h){h.textContent='⚠ '+data.dataDirError;}
+    modal('데이터 폴더 오류',data.dataDirError+'\n\n관리자 권한으로 다시 설치하거나, 데이터 폴더('+(data.dataDir||'')+')의 쓰기 권한을 확인하세요.',[['닫기','primary',null]]);
+  }
   renderCtrl(LAST_STATE);loadCatalog();loadConfig();loadWizard();
 });
 function connectSSE(){

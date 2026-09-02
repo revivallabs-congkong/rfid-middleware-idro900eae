@@ -24,6 +24,7 @@ type Meta struct {
 	ConfigPath     string `json:"configPath,omitempty"`
 	DataDir        string `json:"dataDir,omitempty"`
 	ConfigError    string `json:"configError,omitempty"`
+	DataDirError   string `json:"dataDirError,omitempty"` // 데이터 폴더 쓰기 불가(권한 등)
 }
 
 type sseMsg struct {

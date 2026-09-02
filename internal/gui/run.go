@@ -57,6 +57,13 @@ func Run(ctx context.Context, opts Options) error {
 		ga.maxAge = cfg.QueueMaxAgeHours
 		meta.DataDir = cfg.DataDir
 		meta.CfgFingerprint = CfgFingerprint(cfg)
+		// 데이터 폴더 쓰기 가능 여부 — 설치 환경 권한 문제를 조기에 드러낸다.
+		// (쓰기 불가면 로그·카탈로그·수집이 모두 실패하므로 명확히 알린다)
+		if err := ensureDir(cfg.DataDir); err != nil {
+			meta.DataDirError = "데이터 폴더를 만들 수 없습니다: " + err.Error()
+		} else if err := health.CheckDiskDir(cfg.DataDir); err != nil {
+			meta.DataDirError = "데이터 폴더에 쓸 수 없습니다(권한 확인 필요): " + err.Error()
+		}
 	}
 
 	// 단일 인스턴스 — 이미 GUI 가 떠 있으면 그 창을 다시 열고 종료한다
@@ -66,13 +73,16 @@ func Run(ctx context.Context, opts Options) error {
 			guiLock := filepath.Join(ga.dataDir, "gui.lock")
 			release, lerr := app.AcquireNamedLock(guiLock)
 			if lerr != nil {
-				// 다른 GUI 실행 중 — 그 URL 을 열고 조용히 종료
+				// 잠금 실패. 다른 GUI 가 URL 을 써놨으면(진짜 중복 실행) 그 창을
+				// 열고 종료. URL 이 없으면 잠금 파일 생성 실패(권한 등)이므로
+				// 단일 인스턴스 보장은 포기하되 GUI 는 띄워 오류를 보여준다.
 				if u := readURLFile(ga.dataDir); u != "" {
 					OpenBrowser(u)
+					return nil
 				}
-				return nil
+			} else {
+				defer release()
 			}
-			defer release()
 		}
 		// 모드 중재 — app.lock 이 비어 있으면 호스팅 (§6.5)
 		if release, err := app.AcquireLock(ga.dataDir); err == nil {
