@@ -22,3 +22,35 @@ jobs:
         run: GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H=windowsgui -s -w" -o dist/rfid-middleware.exe ./cmd/rfid-middleware
       - name: Checksum
         run: shasum -a 256 dist/rfid-middleware.exe
+
+  package:
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "v=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "v=0.0.0-ci.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Build exe (windowsgui)
+        shell: bash
+        run: go build -trimpath -ldflags "-H=windowsgui -s -w -X main.version=${{ steps.ver.outputs.v }}" -o dist/rfid-middleware.exe ./cmd/rfid-middleware
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Build installer
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.v }} installer\rfid-middleware.iss'
+      - name: Checksum
+        shell: bash
+        run: cd installer/Output && sha256sum *.exe | tee SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rfid-middleware-setup
+          path: installer/Output/*

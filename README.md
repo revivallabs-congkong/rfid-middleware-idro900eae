@@ -79,22 +79,40 @@ rfid-middleware service install|uninstall|start|stop --config config.json   # Wi
 변경한 경우에만 `addr` 의 host 부분을 수정하면 된다. `PORT` 같은 미확정
 placeholder 는 설정 검증에서 거부된다.
 
-## Windows 설치 (관리자 PowerShell)
+## Windows 설치
+
+### 방법 1 — 설치 패키지 (권장)
+
+`rfid-middleware-setup-<버전>.exe` 를 실행한다(관리자 권한). 설치 프로그램이
+자동으로 처리한다: 프로그램 설치(`%ProgramFiles%\CongKong\RFID Middleware`),
+데이터 폴더 생성·권한 부여(`%ProgramData%\CongKong\RFIDMiddleware`, 설치
+사용자에 Modify), 예제 config 배치, 시작 메뉴·바탕화면 바로가기.
+
+설치 중 옵션:
+- **무인 상주 서비스로 등록** — 행사장에 두고 무인 운영할 때만 체크. 서비스는
+  Automatic(Delayed Start) + 실패 시 1분 후 자동 재시작으로 등록되고 즉시 시작된다.
+  체크하지 않으면 GUI 우선(운영자가 콘솔에서 [수집 시작])이 기본이다.
+- **행사용 전원 설정 적용** — 절전·화면 끄기·최대 절전 해제(`powercfg`).
+- 방화벽 설정 불필요 — GUI 는 `127.0.0.1` 에만 바인드한다.
+
+제거 시 서비스는 자동 해제되며, **데이터 폴더(큐·로그)는 보존**된다.
+
+설치 후 콘솔(바탕화면 바로가기)을 열어 세션을 선택하면 토큰이 config 에 반영된다.
+NTP 동기화 확인(`w32tm /query /status`) — 시계가 틀어지면 서버가 `checkedAt` 을
+400 으로 폐기한다(콘솔의 현장 점검 0단계로도 확인 가능).
+
+패키지는 CI(windows 러너, Inno Setup)로 빌드된다: `installer/rfid-middleware.iss`.
+
+### 방법 2 — 수동 설치 (개발·문제 진단용)
 
 ```powershell
 mkdir "C:\ProgramData\CongKong\RFIDMiddleware"
 copy config.json "C:\ProgramData\CongKong\RFIDMiddleware\config.json"
-# 설정 파일 ACL 제한 (SYSTEM/Administrators 만)
 icacls "C:\ProgramData\CongKong\RFIDMiddleware\config.json" /inheritance:r `
   /grant "SYSTEM:F" /grant "Administrators:F"
 .\rfid-middleware.exe service install --config "C:\ProgramData\CongKong\RFIDMiddleware\config.json"
 .\rfid-middleware.exe service start
 ```
-
-- 서비스는 Automatic (Delayed Start), 실패 시 1분 후 자동 재시작.
-- 행사 중 노트북 절전/최대 절전은 꺼 둔다 (전원 옵션).
-- NTP 동기화 필수: `w32tm /query /status` 확인. 시계가 틀어지면 서버가
-  `checkedAt` 을 400 으로 폐기한다.
 
 ## 운영 메모
 
