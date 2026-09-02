@@ -45,8 +45,13 @@ document.querySelectorAll('.tabs button').forEach(b=>{
 
 /* ── state / monitor ── */
 function statusWord(st){
+  if(st.standby)return'수집 대기';
   if(!st.collecting)return'수집 중지';
   return st.signal==='green'?'수집 중':st.signal==='yellow'?'주의':st.signal==='red'?'점검 필요':'수집 중';
+}
+function toggleCollect(on){
+  if(META.mode==='hosting')coreCtl(on?'start':'stop',on?'수집을 시작':'수집을 중지');
+  else svcCtl(on?'start':'stop',on?'시작':'중지');
 }
 function renderState(st){
   LAST_STATE=st;
@@ -62,13 +67,12 @@ function renderState(st){
   chip($('chipCollect'),st.collecting?'on':'off',st.collecting?'수집 중':'수집 중지');
   chip($('chipNet'),st.network==='online'?'on':st.network==='offline'?'off':'wait',
     st.network==='online'?'인터넷 연결됨':st.network==='offline'?'인터넷 끊김':'인터넷 확인 중');
-  // contextual action
+  // 수집 토글 — 운영 화면에서 시작/중지 (항상 표시)
   const act=$('bandAct');act.innerHTML='';
-  if(!st.coreRunning){
-    const b=document.createElement('button');b.className='btn primary';b.textContent='수집 시작';
-    b.onclick=()=>META.mode==='hosting'?coreCtl('start','수집을 시작'):svcCtl('start','시작');
-    act.appendChild(b);
-  }
+  const toggle=document.createElement('button');
+  if(st.coreRunning){toggle.className='btn';toggle.textContent='수집 중지';toggle.onclick=()=>toggleCollect(false);}
+  else{toggle.className='btn primary lg';toggle.textContent='수집 시작';toggle.onclick=()=>toggleCollect(true);}
+  act.appendChild(toggle);
   renderReaders(st);
   renderCtrl(st);
   renderCatalogBanners(st);
@@ -78,6 +82,10 @@ function chip(el,cls,text){el.className='chip '+cls;el.querySelector('span:last-
 
 function renderReaders(st){
   const box=$('readers');box.innerHTML='';
+  if(st.standby){
+    box.innerHTML='<div class="card"><div class="sess">수집을 시작하면 리더 상태와 체크인 기록이 여기에 표시됩니다.</div></div>';
+    return;
+  }
   (st.readers||[]).forEach(r=>{
     const sess=r.sessionName?esc(r.sessionName)+(r.sessionVerified?' <span class="verified">✓</span>':' <span style="color:var(--ink-faint)">(확인 중)</span>')
       :esc(r.boothName||'세션 미지정');

@@ -24,6 +24,7 @@ type State struct {
 	CoreVersion       string               `json:"coreVersion,omitempty"`
 	CoreMode          string               `json:"coreMode,omitempty"`
 	Collecting        bool                 `json:"collecting"`        // 수집 중(코어 실행 + 전역 halt 아님)
+	Standby           bool                 `json:"standby"`           // 수집 대기(운영자가 아직 켜지 않음)
 	Network           string               `json:"network"`           // online | offline | unknown
 	NetworkText       string               `json:"networkText"`
 	SuccessSinceStart int64                `json:"successSinceStart"`

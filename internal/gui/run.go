@@ -37,6 +37,7 @@ type guiApp struct {
 	ring   *LogRing
 	trayCh chan TrayState
 	wiz    *Wizard
+	runCtx context.Context
 
 	mu  sync.Mutex
 	cfg *config.Config // 디스크 설정의 현재 뷰 (쓰기 후 reload)
@@ -89,6 +90,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	ga.runCtx = runCtx
 
 	if ga.cfg != nil {
 		ga.mgr = &CatalogManager{
@@ -105,10 +107,8 @@ func Run(ctx context.Context, opts Options) error {
 	if ga.mode == "hosting" {
 		ga.ring = NewLogRing(4096)
 		ga.core = &CoreController{CfgPath: ga.cfgPath, Version: ga.version, Ring: ga.ring}
-		if err := ga.core.Start(runCtx); err != nil {
-			// 기동 실패해도 GUI 는 떠서 원인을 보여준다
-			ga.core.lastErr = err.Error()
-		}
+		// 자동 기동하지 않는다 — 수집 대기 상태로 두고, 운영자가 화면에서
+		// [수집 시작]을 눌러야 코어가 뜬다 (사용자 요청 2026-09-02).
 		defer ga.core.Stop() // 종료 grace 10s (§7.3)
 		go ga.flushRing(runCtx)
 	} else if ga.dataDir != "" {
@@ -252,14 +252,23 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 	if ga.ring != nil {
 		st.LogDropped = ga.ring.Dropped()
 	}
-	// 호스팅인데 코어가 죽어 있으면 최우선 오류
+	// 호스팅인데 코어가 안 돌면: 대기(정상) vs 크래시(오류) 구분
 	if ga.mode == "hosting" && ga.core != nil && !ga.core.Running() {
-		st.Signal = "red"
 		st.CoreRunning = false
 		st.Collecting = false
-		st.Headline = "체크인 수집이 중지됨 — [수집 시작] 을 누르세요"
-		if e := ga.core.LastErr(); e != "" {
-			st.Headline = "코어 기동 실패 — " + e
+		st.Readers = nil // 대기 중엔 지난 리더 상태를 보여주지 않는다
+		if ga.core.Crashed() {
+			st.Signal = "red"
+			st.Standby = false
+			st.Headline = "수집이 오류로 멈췄습니다 — 다시 시작하세요"
+			if e := ga.core.LastErr(); e != "" {
+				st.Headline = "수집이 멈췄습니다 — " + e
+			}
+		} else {
+			// 대기 상태 — 차분하게, [수집 시작] 유도
+			st.Signal = "idle"
+			st.Standby = true
+			st.Headline = "수집 대기 중 — [수집 시작]을 누르면 체크인을 받습니다"
 		}
 	}
 	if ga.mgr == nil {
@@ -357,17 +366,22 @@ func (ga *guiApp) applySession(readerID, sessionID string) (any, *apiError) {
 	if err != nil {
 		return nil, &apiError{"internal", err.Error()}
 	}
-	if ga.mode == "hosting" {
-		if err := ga.core.Restart(context.Background()); err != nil {
+	// 수집 중이면 재기동해 즉시 반영. 대기 상태면 저장만 하고 시작하지 않는다
+	// (운영자가 [수집 시작] 을 눌러야 켜진다).
+	if ga.mode == "hosting" && ga.core.Running() {
+		if err := ga.core.Restart(ga.runCtx); err != nil {
 			RollbackConfig(ga.cfgPath, bak)
-			ga.core.Start(context.Background()) // 원설정으로 복구 기동
+			ga.core.Start(ga.runCtx) // 원설정으로 복구 기동
 			return nil, &apiError{"core_restart_failed", "재기동 실패로 이전 설정으로 되돌렸습니다: " + err.Error()}
 		}
 	}
 	RemoveBackup(bak)
 	ga.reloadCfg()
 	if ga.mode == "hosting" {
-		return applyResult{Message: fmt.Sprintf("'%s' 세션을 적용했습니다 — 서버 확인 중", sess.Name)}, nil
+		if ga.core.Running() {
+			return applyResult{Message: fmt.Sprintf("'%s' 세션을 적용했습니다 — 서버 확인 중", sess.Name)}, nil
+		}
+		return applyResult{Message: fmt.Sprintf("'%s' 세션을 저장했습니다 — [수집 시작]을 누르면 적용됩니다", sess.Name)}, nil
 	}
 	return applyResult{NeedsServiceRestart: true,
 		Message: fmt.Sprintf("'%s' 세션을 저장했습니다 — 서비스를 재시작해야 적용됩니다", sess.Name)}, nil
@@ -409,13 +423,13 @@ func (ga *guiApp) resume(readerID, pending, sessionID string) (any, *apiError) {
 		if bak != "" {
 			RollbackConfig(ga.cfgPath, bak)
 		}
-		ga.core.Start(context.Background())
+		ga.core.Start(ga.runCtx)
 		return nil, &apiError{"internal", "재개 실패: " + err.Error()}
 	}
 	if bak != "" {
 		RemoveBackup(bak)
 	}
-	if err := ga.core.Start(context.Background()); err != nil {
+	if err := ga.core.Start(ga.runCtx); err != nil {
 		return nil, &apiError{"core_restart_failed", err.Error()}
 	}
 	ga.reloadCfg()
@@ -431,9 +445,9 @@ func (ga *guiApp) coreControl(action string) *apiError {
 	case "stop":
 		err = ga.core.Stop()
 	case "start":
-		err = ga.core.Start(context.Background())
+		err = ga.core.Start(ga.runCtx)
 	case "restart":
-		err = ga.core.Restart(context.Background())
+		err = ga.core.Restart(ga.runCtx)
 	default:
 		return &apiError{"invalid_request", "action 은 start|stop|restart"}
 	}
@@ -562,11 +576,11 @@ func (ga *guiApp) configSave(e ConfigEdit) (any, *apiError) {
 	}
 	needRestart := false
 	if ga.mode == "hosting" && ga.core != nil {
-		if rerr := ga.core.Restart(context.Background()); rerr != nil {
+		if rerr := ga.core.Restart(ga.runCtx); rerr != nil {
 			if bak != "" {
 				RollbackConfig(ga.cfgPath, bak)
 			}
-			ga.core.Start(context.Background())
+			ga.core.Start(ga.runCtx)
 			return nil, &apiError{"core_restart_failed", "재기동 실패로 이전 설정으로 되돌렸습니다: " + rerr.Error()}
 		}
 	} else {
