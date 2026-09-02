@@ -39,12 +39,21 @@
    - ✅ RDR3(디바운스 동작 — 운영자 확인, 2026-09-02), ✅ 오프라인 차단→복구
      (§10 항목 5 — 운영자 확인, 2026-09-02) → **리더 수용 기준 RDR1~3 전부 통과,
      단계 3 종료**. 남은 것: (선택) 토큰 회수 시험뿐
-4. **Windows 상주화·출시 (계획서 단계 4)** — 패키징 완료, 설치 검증 남음
-   - ✅ 정식 릴리스 **v0.1.0** 배포 (2026-09-01): exe + SHA-256 + config.example.json,
-     릴리스 노트에 검증 상태·설치 요약 포함
-   - 남은 것: 깨끗한 Windows 노트북에서 `service install` → 재부팅 자동 시작 → 큐 복구
-     확인, 설정 파일 ACL(icacls)·절전 해제 정책 적용 — README §Windows 설치 참조
-   - ~~남은 현장 시험~~ ✅ RDR3·오프라인 완료(2026-09-02). 남은 건 (선택) 토큰 회수뿐
+4. **Windows 상주화·출시 (계획서 단계 4)** — 패키징 완료, 실기기 설치 검증 남음
+   - ✅ CLI 릴리스 v0.1.0(2026-09-01). ✅ **GUI 전환 M1~M3 + 설치 패키지(M4) 구현**
+     (2026-09-02): 관측/호스팅 GUI, 세션 카탈로그, 현장 점검 마법사, 수집 토글·대기,
+     체크인 테이블 UI, Inno Setup 설치 스크립트 + CI 패키지 잡
+   - GUI 실기기 확인 완료: 연결·전송·마법사·인디케이터·수집 토글·대기 전이
+   - **남은 것(실기기)**: 설치 패키지로 깨끗한 노트북 설치 → 재부팅 자동 시작 →
+     큐 복구 확인 (서비스 옵션), config ACL·절전 정책이 설치로 적용되는지 확인
+   - ~~남은 현장 시험~~ ✅ RDR3·오프라인 완료. 남은 건 (선택) 토큰 회수뿐
+
+## GUI 프로젝트 (별도 PDCA: rfid-middleware-gui)
+
+- 계획: `congkong-v3/docs/01-plan/features/rfid-middleware-gui.plan.md`
+- 설계: `congkong-v3/docs/02-design/features/rfid-middleware-gui.design.md` (v0.95, design-validator 반영)
+- 서버 계약: `congkong-v3/docs/features/pulse/pulse-sessions-export-brief.ko.md` (내보내기 완료·실검증)
+- M0~M4 구현·실기기 검증 완료. 남은 것: M4 설치 패키지 실기기 검증, `/pdca analyze` 갭 분석
 
 ## 참고
 
