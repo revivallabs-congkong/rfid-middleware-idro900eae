@@ -217,7 +217,49 @@ func (st *sessionState) initSteps() ([]initStep, error) {
 	}, nil
 }
 
+// stopSettle — Stop 후 인벤토리 잔류 스트림을 비우는 최대 대기. Stop ack(>A3)
+// 를 받으면 조기 종료한다.
+const stopSettle = 700 * time.Millisecond
+
+// stopAndDrain 은 INIT 전에 Stop(3\r) 을 보내 자동 인벤토리를 멈추고 잔류
+// 태그 스트림을 흡수한다 (settings §3.2 "Inventory 중이면 Stop 먼저").
+// 리더가 Reader Mode x=1(부팅 시 자동 Inventory)이면 접속 즉시 >T 를 쏟아내
+// INIT_VERSION 의 >v 응답을 묻어 timeout 을 유발하므로, 초기화 선행 단계로
+// 반드시 필요하다 (실장비 관측 2026-09-02). 인벤토리가 아니어도 무해하다.
+func (st *sessionState) stopAndDrain(ctx context.Context) error {
+	st.conn.SetWriteDeadline(time.Now().Add(cmdTimeout))
+	if _, err := st.conn.Write(protocol.CmdStop()); err != nil {
+		return errors.New("STOP write 실패: " + err.Error())
+	}
+	st.conn.SetWriteDeadline(time.Time{})
+
+	settle := st.s.Clock.After(stopSettle)
+	ackStop := protocol.MatchAck('3')
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case rerr := <-st.readErr:
+			return errors.New("STOP 중 연결 종료: " + errString(rerr))
+		case <-settle:
+			return nil
+		case chunk := <-st.chunks:
+			res := st.framer.Push(chunk)
+			st.logDropped(res.Dropped)
+			for _, raw := range res.Lines {
+				if ackStop(protocol.Parse(raw)) {
+					return nil // Stop 확인 — 잔류 비움 완료
+				}
+				// 그 외(잔류 >T 등)는 버린다 — INIT 전이라 admission 대상 아님
+			}
+		}
+	}
+}
+
 func (st *sessionState) initialize(ctx context.Context) error {
+	if err := st.stopAndDrain(ctx); err != nil {
+		return err
+	}
 	steps, err := st.initSteps()
 	if err != nil {
 		return err

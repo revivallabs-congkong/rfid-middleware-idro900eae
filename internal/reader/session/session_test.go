@@ -114,10 +114,10 @@ func TestInitSequenceAndTagFlow(t *testing.T) {
 	done := make(chan struct{})
 	go func() { s.Run(ctx); close(done) }()
 
-	// 초기화 5개 명령이 순서대로 도착할 때까지 대기
+	// Stop 선행 + 초기화 5개 = 6개 명령이 순서대로 도착할 때까지 대기
 	deadline := time.After(3 * time.Second)
 	for {
-		if len(fr.commands()) >= 5 {
+		if len(fr.commands()) >= 6 {
 			break
 		}
 		select {
@@ -126,8 +126,8 @@ func TestInitSequenceAndTagFlow(t *testing.T) {
 		case <-time.After(10 * time.Millisecond):
 		}
 	}
-	want := []string{">y v\r", ">x b 0\r", ">x p 300\r", ">x i 0\r", ">f\r"}
-	got := fr.commands()[:5]
+	want := []string{"3\r", ">y v\r", ">x b 0\r", ">x p 300\r", ">x i 0\r", ">f\r"}
+	got := fr.commands()[:6]
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("cmd[%d] = %q, want %q", i, got[i], want[i])
@@ -195,7 +195,7 @@ func TestTagsDuringInitNotAdmitted(t *testing.T) {
 
 	deadline := time.After(3 * time.Second)
 	for {
-		if len(fr.commands()) >= 5 {
+		if len(fr.commands()) >= 6 {
 			break
 		}
 		select {
@@ -244,7 +244,7 @@ func TestReconfigureStopApplyResume(t *testing.T) {
 
 	deadline := time.After(3 * time.Second)
 	for {
-		if len(fr.commands()) >= 5 {
+		if len(fr.commands()) >= 6 {
 			break
 		}
 		select {
@@ -259,9 +259,9 @@ func TestReconfigureStopApplyResume(t *testing.T) {
 	deadline = time.After(3 * time.Second)
 	for {
 		cmds := fr.commands()
-		if len(cmds) >= 8 {
-			if cmds[5] != "3\r" || cmds[6] != ">x p 200\r" || cmds[7] != ">f\r" {
-				t.Fatalf("reconfigure 순서 오류: %q", cmds[5:])
+		if len(cmds) >= 9 {
+			if cmds[6] != "3\r" || cmds[7] != ">x p 200\r" || cmds[8] != ">f\r" {
+				t.Fatalf("reconfigure 순서 오류: %q", cmds[6:])
 			}
 			break
 		}
