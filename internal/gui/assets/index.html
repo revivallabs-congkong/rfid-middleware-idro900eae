@@ -3,122 +3,292 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CongKong RFID 미들웨어</title>
+<title>CongKong RFID 콘솔</title>
 <style>
-:root{--bg:#f7f7f8;--card:#fff;--line:#e3e3e6;--txt:#1d1d22;--sub:#6b6b74;
---green:#18a34a;--yellow:#d97706;--red:#dc2626;--gray:#9ca3af;--blue:#2563eb}
+:root{
+  --canvas:#EBEEF2; --surface:#FFFFFF; --surface-2:#F5F7F9; --inset:#EEF1F4;
+  --ink:#1A1D23; --ink-soft:#5A6270; --ink-faint:#8B93A1;
+  --line:#DDE2E8; --line-soft:#E7EBF0;
+  --live:#0E9F6E; --live-soft:#E4F5EE;
+  --warn:#C77D00; --warn-soft:#FBF0DC;
+  --alert:#E0474C; --alert-soft:#FBE7E8;
+  --idle:#9AA3B0; --idle-soft:#EDEFF2;
+  --accent:#3A44D6; --accent-soft:#ECEDFB;
+  --mono:'Cascadia Mono','Consolas',ui-monospace,monospace;
+  --sans:'Malgun Gothic','Segoe UI',system-ui,-apple-system,sans-serif;
+  --r:12px; --r-sm:8px;
+  --shadow:0 1px 2px rgba(26,29,35,.04), 0 4px 16px rgba(26,29,35,.05);
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;background:var(--bg);color:var(--txt)}
-header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-#dot{width:18px;height:18px;border-radius:50%;background:var(--gray);flex:none}
-#dot.green{background:var(--green)}#dot.yellow{background:var(--yellow)}#dot.red{background:var(--red)}
-#headline{font-weight:700;font-size:16px;flex:1}
-.badge{font-size:12px;color:var(--sub);border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap}
-.ind{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border:1px solid var(--line);border-radius:16px;padding:3px 10px;white-space:nowrap}
-.ind .idot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none}
-.ind.on{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
-.ind.on .idot{background:var(--green)}
-.ind.off{background:#fef2f2;border-color:#fecaca;color:#991b1b}
-.ind.off .idot{background:var(--red)}
-.ind.wait{background:#fffbeb;border-color:#fde68a;color:#92400e}
-.ind.wait .idot{background:var(--yellow)}
-main{max-width:960px;margin:0 auto;padding:16px 20px 40px}
-h2{font-size:14px;color:var(--sub);margin:22px 0 8px}
-#cfgerr{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px;border-radius:8px;display:none;white-space:pre-wrap}
-#readers{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-.card .rid{font-weight:700;display:flex;justify-content:space-between;align-items:center}
-.card .sess{color:var(--sub);font-size:13px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px;margin-top:8px}
-.kv dt{color:var(--sub)}.kv dd{margin:0}
-.state-ok{color:var(--green)}.state-warn{color:var(--yellow)}.state-bad{color:var(--red)}
-.action{margin-top:8px;font-size:12.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 8px}
-.cardbtns{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
-button{font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer}
-button:hover{background:#f0f0f2}
-button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
-button.primary:hover{opacity:.9}
-#ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-#ctrlMsg{display:none}
-.banner{padding:10px 12px;border-radius:8px;font-size:13px;margin:8px 0}
-.banner.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
-.banner.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
-.banner.err{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
-#catbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;color:var(--sub)}
-table{border-collapse:collapse;width:100%;background:var(--card);border-radius:10px;overflow:hidden;font-size:13px}
-th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
-th{background:#fafafa;color:var(--sub);font-weight:600}
-tr.selectable:hover{background:#f0f6ff;cursor:pointer}
-#logbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-select,input[type=text],input[type=number]{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px}
-#cfgView table{margin-top:4px}
-#cfgView .fld{display:grid;grid-template-columns:140px 1fr;gap:6px;align-items:center;margin:4px 0;font-size:13px}
-#cfgView .fld label{color:var(--sub)}
-#cfgView input{width:100%}
-.rdrRow{display:flex;gap:6px;margin:4px 0;align-items:center}
+html,body{height:100%}
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ── topbar ── */
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;
+  padding:12px 20px;background:rgba(255,255,255,.82);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;min-width:0}
+.lamp{width:30px;height:30px;border-radius:50%;background:var(--idle);flex:none;position:relative;
+  box-shadow:0 0 0 5px var(--idle-soft), 0 0 14px rgba(154,163,176,.4);transition:background .4s, box-shadow .4s}
+.lamp.live{background:var(--live);box-shadow:0 0 0 5px var(--live-soft),0 0 16px rgba(14,159,110,.45)}
+.lamp.warn{background:var(--warn);box-shadow:0 0 0 5px var(--warn-soft),0 0 16px rgba(199,125,0,.45)}
+.lamp.alert{background:var(--alert);box-shadow:0 0 0 5px var(--alert-soft),0 0 16px rgba(224,71,76,.5)}
+.lamp.pulse{animation:tagpulse .6s ease-out}
+@keyframes tagpulse{0%{transform:scale(1)}35%{transform:scale(1.22)}100%{transform:scale(1)}}
+.brand .word{font-weight:700;font-size:15px;white-space:nowrap}
+.brand .sub{font-family:var(--mono);font-size:11px;color:var(--ink-faint);white-space:nowrap}
+.spacer{flex:1}
+.seg{display:inline-flex;background:var(--inset);border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;color:var(--ink-soft);font-weight:600;font-size:13px;
+  padding:6px 16px;border-radius:8px;transition:background .15s,color .15s}
+.seg button[aria-pressed=true]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.meta{font-family:var(--mono);font-size:11px;color:var(--ink-faint);text-align:right;white-space:nowrap}
+
+main{max-width:1080px;margin:0 auto;padding:22px 20px 56px}
+.mode[hidden]{display:none}
+
+/* ── monitor: status band ── */
+.band{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:22px 24px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.band::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--idle)}
+.band.live::before{background:var(--live)} .band.warn::before{background:var(--warn)} .band.alert::before{background:var(--alert)}
+.band .hl{font-size:24px;font-weight:750;letter-spacing:-.01em;line-height:1.25;margin:0 0 14px}
+.band .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;
+  padding:5px 12px;border-radius:999px;border:1px solid var(--line);color:var(--ink-soft);background:var(--surface-2)}
+.chip .cdot{width:8px;height:8px;border-radius:50%;background:var(--idle);flex:none}
+.chip.on{background:var(--live-soft);border-color:transparent;color:#0a6f4c}.chip.on .cdot{background:var(--live)}
+.chip.off{background:var(--alert-soft);border-color:transparent;color:#a32d31}.chip.off .cdot{background:var(--alert)}
+.chip.wait{background:var(--warn-soft);border-color:transparent;color:#8a5700}.chip.wait .cdot{background:var(--warn)}
+.band .act{margin-left:auto}
+
+/* ── buttons ── */
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);
+  padding:8px 15px;border-radius:var(--r-sm);font-weight:600;font-size:13px;transition:background .15s,border-color .15s}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.danger{color:var(--alert);border-color:#f3c9cb}
+.btn.danger:hover{background:var(--alert-soft)}
+.btn.sm{padding:5px 11px;font-size:12.5px}
+
+/* ── monitor grid ── */
+.mgrid{display:grid;grid-template-columns:1fr 340px;gap:16px;margin-top:16px}
+.sec-label{font-size:12px;font-weight:700;color:var(--ink-faint);letter-spacing:.02em;margin:0 0 10px}
+.readers{display:grid;gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+.card .chead{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.card .rid{font-family:var(--mono);font-weight:700;font-size:13px;color:var(--ink)}
+.card .sess{font-size:13px;color:var(--ink-soft)}
+.card .sess b{color:var(--ink)}
+.verified{color:var(--live);font-weight:700}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+.metric .mk{font-size:11px;color:var(--ink-faint);margin-bottom:3px}
+.metric .mv{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--ink)}
+.metric .mv.big{font-size:22px}
+.metric .mv.ok{color:var(--live)}.metric .mv.bad{color:var(--alert)}
+.card .conn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600}
+.card .conn .d{width:8px;height:8px;border-radius:50%}
+.conn.up{color:var(--live)}.conn.up .d{background:var(--live)}
+.conn.down{color:var(--alert)}.conn.down .d{background:var(--alert)}
+.cardnote{margin-top:12px;font-size:12.5px;color:#8a5700;background:var(--warn-soft);
+  border-radius:var(--r-sm);padding:8px 11px}
+.cardnote.bad{color:#a32d31;background:var(--alert-soft)}
+.cardbtns{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
+
+/* ── activity feed ── */
+.activity{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;max-height:520px}
+.activity .ahead{padding:14px 16px 10px;border-bottom:1px solid var(--line-soft)}
+.afeed{overflow-y:auto;padding:6px 0}
+.aitem{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 16px}
+.aitem .adot{width:8px;height:8px;border-radius:50%;background:var(--idle)}
+.aitem.tag .adot{background:var(--accent)}.aitem.ok .adot{background:var(--live)}
+.aitem.warn .adot{background:var(--warn)}.aitem.bad .adot{background:var(--alert)}
+.aitem .atext{font-size:13px}
+.aitem .atext small{color:var(--ink-faint)}
+.aitem .atime{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+.aempty{padding:28px 16px;text-align:center;color:var(--ink-faint);font-size:13px}
+
+/* ── setup tabs ── */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:18px}
+.tabs button{border:0;background:transparent;color:var(--ink-soft);font-weight:600;font-size:14px;
+  padding:10px 14px;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.panel[hidden]{display:none}
+.h2{font-size:15px;font-weight:700;margin:0 0 4px}
+.hint{font-size:12.5px;color:var(--ink-soft);margin:0 0 14px}
+
+/* ── banners ── */
+.banner{padding:11px 14px;border-radius:var(--r-sm);font-size:13px;margin:0 0 10px;
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.banner.info{background:var(--accent-soft);color:#2a33a8}
+.banner.warn{background:var(--warn-soft);color:#8a5700}
+.banner.err{background:var(--alert-soft);color:#a32d31}
+.banner .bspacer{flex:1}
+
+/* ── tables & forms ── */
+.tbl{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.tbl th,.tbl td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--line-soft)}
+.tbl th{background:var(--surface-2);color:var(--ink-faint);font-weight:600;font-size:12px}
+.tbl tr:last-child td{border-bottom:0}
+.tbl tr.pick:hover{background:var(--accent-soft);cursor:pointer}
+.catbar{font-size:13px;color:var(--ink-soft);margin:0 0 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.catbar b{color:var(--ink)}
+.fld{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;margin:8px 0}
+.fld label{color:var(--ink-soft);font-size:13px}
+.fld input,.fld select{width:100%}
+input[type=text],input[type=number],select{font:inherit;padding:7px 10px;border:1px solid var(--line);
+  border-radius:var(--r-sm);background:var(--surface);color:var(--ink)}
+input[type=text]:focus,input[type=number]:focus,select:focus{border-color:var(--accent);outline:none}
+.rdrRow{display:flex;gap:8px;margin:7px 0;align-items:center}
 .rdrRow input{flex:1}
-#wizard .wsetup{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-.wstep{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin:4px 0;background:var(--card)}
-.wstep .wicon{width:20px;flex:none;font-weight:700;text-align:center}
-.wstep .wbody{flex:1}.wstep .wt{font-weight:600}
-.wstep .wd{font-size:12.5px;color:var(--sub)}
-.wstep .wm{font-size:12px;color:var(--sub);margin-top:2px}
-.wstep.pass{border-color:#bbf7d0}.wstep.fail{border-color:#fecaca}.wstep.warn{border-color:#fde68a}
-.wstep.running{border-color:var(--blue)}
-#logs{background:#101014;color:#d6d6dd;border-radius:10px;padding:10px;height:320px;overflow-y:auto;
-font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:break-all}
-.lw{color:#facc15}.le{color:#f87171}.ld{color:#6b7280}
-#queue{font-size:13px;color:var(--sub);margin-top:8px}
-#modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:10}
-#modal .box{background:var(--card);border-radius:12px;padding:20px;max-width:420px;width:92%}
-#modal h3{margin:0 0 10px;font-size:15px}
-#modal p{font-size:13.5px;color:var(--sub);white-space:pre-wrap}
-#modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.card-plain{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:var(--shadow)}
+
+/* ── wizard ── */
+.wsetup{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.wstep{display:flex;gap:12px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);
+  border-radius:var(--r-sm);margin:7px 0;background:var(--surface)}
+.wstep .wicon{width:22px;flex:none;text-align:center;font-size:15px}
+.wstep .wt{font-weight:600;font-size:13.5px}
+.wstep .wd{font-size:12.5px;color:var(--ink-soft);margin-top:2px}
+.wstep .wm{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);margin-top:4px}
+.wstep.pass{border-color:#bbe8d5}.wstep.fail{border-color:#f3c9cb}
+.wstep.warn{border-color:#f0dcae}.wstep.running{border-color:var(--accent)}
+.wchecks{font-size:13px;display:flex;flex-wrap:wrap;gap:6px 14px;margin:4px 0}
+.wchecks label{display:inline-flex;align-items:center;gap:5px}
+
+/* ── log ── */
+.logbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.logbox{background:#12141A;color:#D6DAE2;border-radius:var(--r);padding:12px;height:360px;
+  overflow-y:auto;font-family:var(--mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all}
+.logbox .lw{color:#E0B341}.logbox .le{color:#EC7378}.logbox .ld{color:#6B7280}
+
+/* ── system control strip ── */
+.ctrlstrip{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.tag-note{font-size:12px;color:var(--ink-faint)}
+
+/* ── modal ── */
+#modal{position:fixed;inset:0;background:rgba(26,29,35,.42);display:none;align-items:center;
+  justify-content:center;z-index:50;padding:20px}
+#modal.show{display:flex}
+#modal .box{background:var(--surface);border-radius:14px;padding:22px 24px;max-width:440px;width:100%;
+  box-shadow:0 24px 60px rgba(26,29,35,.28)}
+#modal h3{margin:0 0 10px;font-size:16px}
+#modal p{margin:0;font-size:13.5px;color:var(--ink-soft);white-space:pre-wrap;line-height:1.55}
+#modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* ── toast ── */
+#toast{position:fixed;right:20px;bottom:20px;display:flex;flex-direction:column;gap:8px;z-index:60}
+.toast{background:var(--ink);color:#fff;padding:11px 15px;border-radius:var(--r-sm);font-size:13px;
+  box-shadow:0 8px 24px rgba(0,0,0,.2);max-width:360px;animation:tin .2s ease-out}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+@media (max-width:760px){
+  .mgrid{grid-template-columns:1fr}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .meta{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .lamp,.lamp.pulse{animation:none!important;transition:none}
+  .toast{animation:none}
+}
 </style>
 </head>
 <body>
-<header>
-  <div id="dot"></div>
-  <div id="headline">연결 중…</div>
-  <span class="ind" id="indCollect"><span class="idot"></span><span class="itxt">수집</span></span>
-  <span class="ind" id="indNet"><span class="idot"></span><span class="itxt">인터넷</span></span>
-  <span class="badge" id="mode">-</span>
-  <span class="badge" id="ver">-</span>
-</header>
-<main>
-  <div id="cfgerr"></div>
-  <h2>리더</h2>
-  <div id="readers"></div>
-  <div id="queue"></div>
-
-  <h2>수집 제어</h2>
-  <div id="ctrl"></div>
-
-  <h2>세션 카탈로그</h2>
-  <div id="catBanners"></div>
-  <div id="catbar"></div>
-  <div id="sessions"></div>
-
-  <h2>현장 점검</h2>
-  <div id="wizard"></div>
-
-  <h2>설정 <button id="cfgEdit" style="font-size:12px">편집</button></h2>
-  <div id="cfgView"></div>
-
-  <h2>실시간 로그</h2>
-  <div id="logbar">
-    <select id="fLevel"><option value="">모든 레벨</option><option>debug</option><option>info</option><option>warn</option><option>error</option></select>
-    <input type="text" id="fReader" placeholder="리더 id 필터">
-    <input type="text" id="fEvent" placeholder="이벤트명 필터">
-    <button id="pause">일시정지</button>
+<header class="topbar">
+  <div class="brand">
+    <div id="lamp" class="lamp" aria-hidden="true"></div>
+    <div>
+      <div class="word" id="statusWord">연결 중</div>
+      <div class="sub" id="statusMode">—</div>
+    </div>
   </div>
-  <div id="logs"></div>
+  <div class="spacer"></div>
+  <div class="seg" role="tablist" aria-label="화면 모드">
+    <button id="modeMonitor" role="tab" aria-pressed="true">운영</button>
+    <button id="modeSetup" role="tab" aria-pressed="false">점검·설정</button>
+  </div>
+  <div class="meta" id="meta">—</div>
+</header>
+
+<main>
+  <!-- ═══ 운영 모드 ═══ -->
+  <section id="monitor" class="mode" aria-label="운영 모니터">
+    <div class="band" id="band">
+      <h1 class="hl" id="headline">상태를 불러오는 중…</h1>
+      <div class="row">
+        <span class="chip" id="chipCollect"><span class="cdot"></span><span>수집</span></span>
+        <span class="chip" id="chipNet"><span class="cdot"></span><span>인터넷</span></span>
+        <span class="act" id="bandAct"></span>
+      </div>
+    </div>
+    <div class="mgrid">
+      <div>
+        <p class="sec-label">리더</p>
+        <div class="readers" id="readers"></div>
+      </div>
+      <div>
+        <p class="sec-label">실시간 활동</p>
+        <div class="activity">
+          <div class="ahead sec-label" style="margin:0">방금 일어난 일</div>
+          <div class="afeed" id="feed"><div class="aempty">태그가 인식되면 여기에 표시됩니다.</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 점검·설정 모드 ═══ -->
+  <section id="setup" class="mode" aria-label="점검 및 설정" hidden>
+    <div class="tabs" role="tablist">
+      <button data-tab="session" role="tab" aria-selected="true">세션</button>
+      <button data-tab="check" role="tab" aria-selected="false">현장 점검</button>
+      <button data-tab="config" role="tab" aria-selected="false">설정</button>
+      <button data-tab="log" role="tab" aria-selected="false">로그</button>
+    </div>
+
+    <div class="panel" id="tab-session">
+      <p class="h2">세션 선택</p>
+      <p class="hint">리더에 지정할 세션을 고르면 토큰이 자동으로 연결됩니다. 콘솔에서 받은 카탈로그 파일을 다운로드 폴더에 두면 자동으로 감지합니다.</p>
+      <div id="catBanners"></div>
+      <div class="catbar" id="catbar"></div>
+      <div id="sessions"></div>
+    </div>
+
+    <div class="panel" id="tab-check" hidden>
+      <p class="h2">현장 점검</p>
+      <p class="hint">설치·행사 전에 리더 연결과 서버 상태를 단계별로 확인합니다. 실태그 체크인은 실제 서버에 기록을 만드니 시험용 태그를 쓰세요.</p>
+      <div id="wizard"></div>
+    </div>
+
+    <div class="panel" id="tab-config" hidden>
+      <p class="h2">시스템</p>
+      <div class="ctrlstrip" id="ctrl"></div>
+      <p class="h2" style="margin-top:20px">설정 <button class="btn sm" id="cfgEdit">편집</button></p>
+      <div id="cfgView"></div>
+    </div>
+
+    <div class="panel" id="tab-log" hidden>
+      <p class="h2">전체 로그</p>
+      <div class="logbar">
+        <select id="fLevel"><option value="">모든 레벨</option><option>debug</option><option>info</option><option>warn</option><option>error</option></select>
+        <input type="text" id="fReader" placeholder="리더 id">
+        <input type="text" id="fEvent" placeholder="이벤트명">
+        <button class="btn sm" id="pause">일시정지</button>
+      </div>
+      <div class="logbox" id="logs"></div>
+    </div>
+  </section>
 </main>
-<div id="modal"><div class="box">
-  <h3 id="mTitle"></h3>
-  <p id="mBody"></p>
-  <div class="btns" id="mBtns"></div>
+
+<div id="modal"><div class="box" role="dialog" aria-modal="true">
+  <h3 id="mTitle"></h3><p id="mBody"></p><div class="btns" id="mBtns"></div>
 </div></div>
+<div id="toast"></div>
 <script src="app.js"></script>
 </body>
 </html>
