@@ -99,7 +99,37 @@ main{max-width:1080px;margin:0 auto;padding:22px 20px 56px}
 .cardnote.bad{color:#a32d31;background:var(--alert-soft)}
 .cardbtns{margin-top:12px;display:flex;gap:8px;flex-wrap:wrap}
 
-/* ── activity feed ── */
+/* ── monitor readers as row ── */
+.readers-row{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+
+/* ── check-in table ── */
+.chkhead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:24px 0 10px;flex-wrap:wrap}
+.chkstats{display:flex;gap:8px;flex-wrap:wrap}
+.stat{display:inline-flex;align-items:baseline;gap:6px;font-size:12.5px;padding:5px 11px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--line);color:var(--ink-soft)}
+.stat b{font-family:var(--mono);font-size:14px;color:var(--ink)}
+.stat.ok b{color:var(--live)} .stat.dup b{color:var(--warn)} .stat.miss b{color:var(--warn)} .stat.fail b{color:var(--alert)}
+.chkwrap{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  box-shadow:var(--shadow);overflow:hidden;max-height:460px;overflow-y:auto}
+.chktbl{width:100%;border-collapse:collapse;font-size:13px}
+.chktbl thead th{position:sticky;top:0;background:var(--surface-2);color:var(--ink-faint);
+  font-weight:600;font-size:11.5px;text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);z-index:1}
+.chktbl td{padding:9px 14px;border-bottom:1px solid var(--line-soft)}
+.chktbl tbody tr:last-child td{border-bottom:0}
+.chktbl tbody tr.fresh{animation:rowin .5s ease-out}
+@keyframes rowin{from{background:var(--accent-soft)}to{background:transparent}}
+.chktbl .t-time,.chktbl .t-tag{font-family:var(--mono);font-size:12px;color:var(--ink-soft)}
+.chktbl .t-tag{color:var(--ink-faint)}
+.chktbl .t-gate{font-family:var(--mono);font-size:12px;color:var(--ink)}
+.rbadge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 9px;border-radius:6px}
+.rbadge::before{content:"";width:6px;height:6px;border-radius:50%}
+.rbadge.ok{background:var(--live-soft);color:#0a6f4c}.rbadge.ok::before{background:var(--live)}
+.rbadge.dup{background:var(--warn-soft);color:#8a5700}.rbadge.dup::before{background:var(--warn)}
+.rbadge.miss{background:var(--idle-soft);color:#5f6773}.rbadge.miss::before{background:var(--idle)}
+.rbadge.fail{background:var(--alert-soft);color:#a32d31}.rbadge.fail::before{background:var(--alert)}
+.chkempty{padding:32px 14px;text-align:center;color:var(--ink-faint);font-size:13px}
+
+/* ── activity feed (legacy, unused) ── */
 .activity{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
   box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;max-height:520px}
 .activity .ahead{padding:14px 16px 10px;border-bottom:1px solid var(--line-soft)}
@@ -227,18 +257,18 @@ input[type=text]:focus,input[type=number]:focus,select:focus{border-color:var(--
         <span class="act" id="bandAct"></span>
       </div>
     </div>
-    <div class="mgrid">
-      <div>
-        <p class="sec-label">리더</p>
-        <div class="readers" id="readers"></div>
-      </div>
-      <div>
-        <p class="sec-label">실시간 활동</p>
-        <div class="activity">
-          <div class="ahead sec-label" style="margin:0">방금 일어난 일</div>
-          <div class="afeed" id="feed"><div class="aempty">태그가 인식되면 여기에 표시됩니다.</div></div>
-        </div>
-      </div>
+    <p class="sec-label" style="margin-top:16px">리더</p>
+    <div class="readers readers-row" id="readers"></div>
+
+    <div class="chkhead">
+      <p class="sec-label" style="margin:0">체크인 기록</p>
+      <div class="chkstats" id="chkStats"></div>
+    </div>
+    <div class="chkwrap">
+      <table class="chktbl">
+        <thead><tr><th style="width:78px">시각</th><th style="width:88px">게이트</th><th style="width:96px">결과</th><th>태그</th></tr></thead>
+        <tbody id="chkBody"><tr><td colspan="4" class="chkempty">체크인이 시작되면 여기에 표시됩니다.</td></tr></tbody>
+      </table>
     </div>
   </section>
 

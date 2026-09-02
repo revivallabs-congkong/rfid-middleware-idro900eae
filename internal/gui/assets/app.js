@@ -110,39 +110,41 @@ function metric(k,v,cls,mono){
   return '<div class="metric"><div class="mk">'+esc(k)+'</div><div class="mv '+(cls||'')+'">'+esc(v||'0')+'</div></div>';
 }
 
-/* ── activity feed ── */
-const EV={
-  SCAN_ENQUEUED:{t:'태그 인식',k:'tag'},
-  READER_CONNECTED:{t:'리더 연결됨',k:'ok'},
-  READER_DISCONNECTED:{t:'리더 연결 끊김',k:'bad'},
-  READER_INVENTORY_STARTED:{t:'태그 읽기 시작',k:'ok'},
-  PREFLIGHT_OK:{t:'서버 확인 완료',k:'ok'},
-  TOKEN_SUSPENDED:{t:'토큰 중단됨',k:'bad'},
-  SENDER_HALTED_REQUEST_BUG:{t:'전송 전역 중단',k:'bad'},
-  MIDDLEWARE_STARTED:{t:'수집 시작',k:'ok'},
-  MIDDLEWARE_STOPPED:{t:'수집 종료',k:'idle'},
-};
-function activityOf(o){
-  if(o.event==='SEND_RESULT'){
-    const s=o.httpStatus;
-    if(s===200)return{t:'체크인 완료',k:'ok'};
-    if(s===409)return{t:'이미 체크인됨',k:'warn'};
-    if(s===404)return{t:'미등록 태그',k:'warn'};
-    return{t:'전송 실패 ('+s+')',k:'bad'};
-  }
-  return EV[o.event]||null;
+/* ── check-in table ── */
+const MAXCHK=200;
+const checkins=[];               // {ts, gate, tag, kind, label}
+const chkCount={ok:0,dup:0,miss:0,fail:0};
+function resultOf(status){
+  if(status===200)return{kind:'ok',label:'성공'};
+  if(status===409)return{kind:'dup',label:'중복'};
+  if(status===404)return{kind:'miss',label:'미등록'};
+  return{kind:'fail',label:'실패 '+status};
 }
-function renderActivity(){
-  const feed=$('feed');
-  const items=[];
-  for(let i=logBuf.length-1;i>=0&&items.length<14;i--){
-    const a=activityOf(logBuf[i]);if(a)items.push([logBuf[i],a]);
-  }
-  if(!items.length){feed.innerHTML='<div class="aempty">태그가 인식되면 여기에 표시됩니다.</div>';return;}
-  feed.innerHTML=items.map(([o,a])=>
-    '<div class="aitem '+a.k+'"><span class="adot"></span>'+
-    '<span class="atext">'+esc(a.t)+(o.readerId?' <small>'+esc(o.readerId)+'</small>':'')+'</span>'+
-    '<span class="atime">'+esc((o.ts||'').slice(11,19))+'</span></div>').join('');
+// SEND_RESULT 로그 1건을 체크인 기록으로 적재.
+function pushCheckin(o){
+  const r=resultOf(o.httpStatus);
+  chkCount[r.kind]++;
+  checkins.push({ts:o.ts||'',gate:o.readerId||'',tag:o.epc||'',kind:r.kind,label:r.label});
+  if(checkins.length>MAXCHK)checkins.shift();
+  renderCheckins(true);
+}
+function renderCheckins(fresh){
+  // 요약 칩
+  $('chkStats').innerHTML=
+    '<span class="stat ok">성공 <b>'+chkCount.ok+'</b></span>'+
+    '<span class="stat dup">중복 <b>'+chkCount.dup+'</b></span>'+
+    '<span class="stat miss">미등록 <b>'+chkCount.miss+'</b></span>'+
+    (chkCount.fail?'<span class="stat fail">실패 <b>'+chkCount.fail+'</b></span>':'');
+  const body=$('chkBody');
+  if(!checkins.length){body.innerHTML='<tr><td colspan="4" class="chkempty">체크인이 시작되면 여기에 표시됩니다.</td></tr>';return;}
+  // 최신이 위로, 최근 100건
+  const rows=checkins.slice(-100).reverse();
+  body.innerHTML=rows.map((c,i)=>
+    '<tr'+(fresh&&i===0?' class="fresh"':'')+'>'+
+    '<td class="t-time">'+esc((c.ts||'').slice(11,19))+'</td>'+
+    '<td class="t-gate">'+esc(c.gate||'—')+'</td>'+
+    '<td><span class="rbadge '+c.kind+'">'+esc(c.label)+'</span></td>'+
+    '<td class="t-tag">'+esc(c.tag||'—')+'</td></tr>').join('');
 }
 
 /* ── control strip (system) ── */
@@ -327,7 +329,7 @@ function appendLog(raw){
   let o;try{o=JSON.parse(raw);}catch{o={event:'RAW',message:raw,level:'info'};}
   logBuf.push(o);if(logBuf.length>MAXLOG)logBuf.shift();
   if(o.event==='SCAN_ENQUEUED')pulseLamp();
-  renderActivity();
+  if(o.event==='SEND_RESULT')pushCheckin(o);
   if(!$('tab-log').hidden&&!paused)drawLog();
 }
 let pulseT=null;
@@ -362,5 +364,6 @@ function connectSSE(){
   es.addEventListener('wizard',e=>{WIZ=JSON.parse(e.data);renderWizard();});
   es.onerror=()=>{es.close();setTimeout(connectSSE,2000);};
 }
+renderCheckins(false);
 fetch('api/state').then(r=>r.json()).then(({data})=>renderState(data)).catch(()=>{});
 connectSSE();
