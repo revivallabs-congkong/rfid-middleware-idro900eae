@@ -121,16 +121,39 @@ func cmdGUI(args []string) error {
 	}
 	path := *cfgPath
 	if path == "" {
-		exe, err := os.Executable()
-		if err == nil {
-			path = filepath.Join(filepath.Dir(exe), "config.json")
-		} else {
-			path = "config.json"
-		}
+		path = defaultGUIConfig()
 	}
 	ctx, cancel := signalContext()
 	defer cancel()
 	return gui.Run(ctx, gui.Options{ConfigPath: path, Version: version})
+}
+
+// defaultGUIConfig 는 --config 미지정 시 설정 파일을 찾는다:
+// ① exe 옆 config.json(무설치·이식형) → ② 설치 위치
+// %ProgramData%\CongKong\RFIDMiddleware\config.json → ③ 없으면 exe 옆(온보딩용).
+// 설치된 exe 를 바탕화면 바로가기가 아니라 직접 더블클릭해도 ProgramData 의
+// 설정을 찾게 한다 (Program Files 는 쓰기 불가라 exe 옆엔 config 가 없다).
+func defaultGUIConfig() string {
+	exeDir := "."
+	if exe, err := os.Executable(); err == nil {
+		exeDir = filepath.Dir(exe)
+	}
+	local := filepath.Join(exeDir, "config.json")
+	if fileExists(local) {
+		return local
+	}
+	if pd := os.Getenv("ProgramData"); pd != "" {
+		installed := filepath.Join(pd, "CongKong", "RFIDMiddleware", "config.json")
+		if fileExists(installed) {
+			return installed
+		}
+	}
+	return local
+}
+
+func fileExists(p string) bool {
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
 }
 
 func cmdReplay(args []string) error {
