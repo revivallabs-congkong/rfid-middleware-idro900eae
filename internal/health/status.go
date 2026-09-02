@@ -25,8 +25,17 @@ type Status struct {
 	Mode               string         `json:"mode,omitempty"` // service|hosting|cli
 	StartedAt          string         `json:"startedAt,omitempty"`
 	NTP                *NTPInfo       `json:"ntp,omitempty"`
+	Server             *ServerInfo    `json:"server,omitempty"`
 	SuccessSinceStart  int64          `json:"successSinceStart"`
 	Readers            []ReaderStatus `json:"readers"`
+}
+
+// ServerInfo 는 콩콩 서버 도달성(인터넷 연결) 진단이다. Seen=false 면 아직
+// 통신 시도 전(판단 불가).
+type ServerInfo struct {
+	Seen   bool   `json:"seen"`
+	Online bool   `json:"online"`
+	LastOK string `json:"lastOk,omitempty"`
 }
 
 // NTPInfo 는 시계 신뢰 진단이다. SkewSec 은 HTTP Date 기반 관측값 (GUI 설계 §6.9).

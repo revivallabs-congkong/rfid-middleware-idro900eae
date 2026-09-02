@@ -23,6 +23,9 @@ type State struct {
 	CoreRunning       bool                 `json:"coreRunning"`
 	CoreVersion       string               `json:"coreVersion,omitempty"`
 	CoreMode          string               `json:"coreMode,omitempty"`
+	Collecting        bool                 `json:"collecting"`        // 수집 중(코어 실행 + 전역 halt 아님)
+	Network           string               `json:"network"`           // online | offline | unknown
+	NetworkText       string               `json:"networkText"`
 	SuccessSinceStart int64                `json:"successSinceStart"`
 	LogDropped        int64                `json:"logDropped,omitempty"`
 	Catalog           *CatalogState        `json:"catalog,omitempty"`
@@ -77,17 +80,31 @@ const connActionText = "리더 전원·케이블을 확인하세요. 다른 프�
 func BuildState(s health.Status, statusErr error, mode string, now time.Time, queueMaxAgeHours int) State {
 	out := State{Mode: mode, SenderState: s.SenderState}
 
+	out.Network, out.NetworkText = "unknown", "인터넷 연결 확인 중"
+
 	if statusErr != nil {
 		out.Signal = "gray"
-		out.Headline = "서비스가 실행 중이 아닙니다 — 서비스를 시작하거나 설정을 확인하세요"
+		out.Collecting = false
+		out.Headline = "수집 중지됨 — 서비스를 시작하거나 설정을 확인하세요"
 		return out
 	}
 	updated, uerr := time.Parse(time.RFC3339, s.UpdatedAt)
 	if uerr != nil || now.Sub(updated) > 15*time.Second {
 		out.Signal = "red"
+		out.Collecting = false
 		out.Headline = "서비스가 응답하지 않음 — 서비스 상태를 확인하세요"
 		out.UpdatedAt = s.UpdatedAt
 		return out
+	}
+
+	// 수집 중 = 코어가 살아 응답 중 + 전역 송신 중단 아님
+	out.Collecting = s.SenderState == string(domain.SenderRunning)
+	if s.Server != nil && s.Server.Seen {
+		if s.Server.Online {
+			out.Network, out.NetworkText = "online", "인터넷 연결됨"
+		} else {
+			out.Network, out.NetworkText = "offline", "인터넷 연결 끊김 — 큐에 보관 중"
+		}
 	}
 
 	out.CoreRunning = true

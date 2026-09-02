@@ -15,8 +15,19 @@ func OpenBrowser(url string) {
 	_ = exec.Command("open", url).Start()
 }
 
-func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirmQuit func() bool) {
+// TrayState 는 트레이 갱신 신호다 (비 Windows 는 사용만 하고 표시는 없음).
+type TrayState struct {
+	Signal     string
+	Collecting bool
+	Network    string
+}
+
+func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirmQuit func() bool, trayCh <-chan TrayState) {
 	fmt.Println("GUI:", url, "(Ctrl+C 로 종료)")
+	go func() {
+		for range trayCh { // 드레인 — 개발 환경은 트레이 없음
+		}
+	}()
 	<-ctx.Done()
 	cancel()
 }

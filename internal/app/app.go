@@ -150,6 +150,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	snd := sender.New(st, client, cfg, gates, clk, log, time.Duration(cfg.QueueMaxAgeHours)*time.Hour)
 	snd.OnSuccess = func(id string) { tele.success(id, clk.Now()) }
+	snd.OnServerContact = func(ok bool) { tele.serverContact(ok, clk.Now()) }
 	adm := &admission.Service{
 		Store: st, Gates: gates, Log: log,
 		Debounce: time.Duration(cfg.DebounceSec) * time.Second,
@@ -288,6 +289,7 @@ func Run(ctx context.Context, opts Options) error {
 		for {
 			if skew, ok := client.ProbeSkew(runCtx); ok {
 				tele.setSkew(int(skew.Seconds()), clk.Now())
+				tele.serverContact(true, clk.Now()) // Date 헤더 수신 = 서버 도달
 			}
 			select {
 			case <-runCtx.Done():
@@ -332,6 +334,9 @@ func Run(ctx context.Context, opts Options) error {
 		}
 		if ntpChecked {
 			s.NTP = &health.NTPInfo{Checked: true, SkewSec: skewSec, At: fmtT(skewAt)}
+		}
+		if seen, online, okAt := tele.server(); seen {
+			s.Server = &health.ServerInfo{Seen: true, Online: online, LastOK: fmtT(okAt)}
 		}
 		for _, r := range cfg.Readers {
 			e := snap[r.ID]

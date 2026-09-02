@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 
 	"fyne.io/systray"
@@ -17,6 +18,53 @@ import (
 //go:embed assets/icon.ico
 var iconICO []byte
 
+//go:embed assets/icon-green.ico
+var iconGreen []byte
+
+//go:embed assets/icon-yellow.ico
+var iconYellow []byte
+
+//go:embed assets/icon-red.ico
+var iconRed []byte
+
+//go:embed assets/icon-gray.ico
+var iconGray []byte
+
+// TrayState 는 트레이 아이콘·툴팁 갱신 신호다.
+type TrayState struct {
+	Signal     string // green|yellow|red|gray
+	Collecting bool
+	Network    string // online|offline|unknown
+}
+
+func trayIcon(signal string) []byte {
+	switch signal {
+	case "green":
+		return iconGreen
+	case "yellow":
+		return iconYellow
+	case "red":
+		return iconRed
+	default:
+		return iconGray
+	}
+}
+
+func trayTip(ts TrayState) string {
+	coll := "수집 중지"
+	if ts.Collecting {
+		coll = "수집 중"
+	}
+	net := ""
+	switch ts.Network {
+	case "online":
+		net = " · 인터넷 연결됨"
+	case "offline":
+		net = " · 인터넷 끊김"
+	}
+	return "CongKong RFID — " + coll + net
+}
+
 // OpenBrowser 는 기본 브라우저로 URL 을 연다 (M0 검증 방식 — rundll32).
 func OpenBrowser(url string) {
 	_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
@@ -24,14 +72,16 @@ func OpenBrowser(url string) {
 
 // runTray 는 트레이 상주 셸이다 (GUI 설계 §7.2). confirmQuit 이 false 를
 // 돌려주면 종료를 취소한다 (호스팅 모드 태그 유실 방지 — §7.3).
-func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirmQuit func() bool) {
+func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirmQuit func() bool, trayCh <-chan TrayState) {
 	go func() {
 		<-ctx.Done()
 		systray.Quit()
 	}()
 	systray.Run(func() {
-		systray.SetIcon(iconICO)
+		systray.SetIcon(iconGray)
 		systray.SetTooltip("CongKong RFID 미들웨어")
+		status := systray.AddMenuItem("상태: 시작 중…", "")
+		status.Disable()
 		open := systray.AddMenuItem("화면 열기", "상태 화면을 브라우저로 연다")
 		systray.AddSeparator()
 		quit := systray.AddMenuItem("종료", "프로그램을 종료한다")
@@ -40,6 +90,11 @@ func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirm
 				select {
 				case <-ctx.Done():
 					return
+				case ts := <-trayCh:
+					systray.SetIcon(trayIcon(ts.Signal))
+					tip := trayTip(ts)
+					systray.SetTooltip(tip)
+					status.SetTitle("상태: " + strings.TrimPrefix(tip, "CongKong RFID — "))
 				case <-open.ClickedCh:
 					OpenBrowser(url)
 				case <-quit.ClickedCh:

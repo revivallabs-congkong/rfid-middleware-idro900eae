@@ -116,7 +116,7 @@ func TestDeliverSuccess(t *testing.T) {
 	f := newFakeServer(t, response{200, `{"result":"success","attendee":{"fullName":"홍길동"}}`})
 	s, st, _ := newSender(t, f.srv.URL, clock.Real{})
 	it := enqueue(t, st, "gate-a", "ABCD", t0)
-	s.deliver(context.Background(), it, time.Now())
+	s.deliver(context.Background(), it, t0.Add(time.Second))
 	if d, _ := st.Depth(); d != 0 {
 		t.Errorf("성공 후 큐가 비어야 함: %d", d)
 	}
@@ -136,7 +136,7 @@ func Test409IsSuccess(t *testing.T) {
 	f := newFakeServer(t, response{409, `{"message":"dup","code":409,"data":{"result":"success:duplication","checkedAt":"2026-01-01T00:00:00Z"}}`})
 	s, st, _ := newSender(t, f.srv.URL, clock.Real{})
 	it := enqueue(t, st, "gate-a", "ABCD", t0)
-	s.deliver(context.Background(), it, time.Now())
+	s.deliver(context.Background(), it, t0.Add(time.Second))
 	if d, _ := st.Depth(); d != 0 {
 		t.Error("409 는 성공과 동일하게 완료")
 	}
@@ -150,14 +150,14 @@ func TestAcceptanceB4NotFoundThenContinue(t *testing.T) {
 	)
 	s, st, gates := newSender(t, f.srv.URL, clock.Real{})
 	it1 := enqueue(t, st, "gate-a", "DEAD", t0)
-	s.deliver(context.Background(), it1, time.Now())
+	s.deliver(context.Background(), it1, t0.Add(time.Second))
 
 	// 미등록 태그는 gate 를 막지 않는다
 	if g, _ := gates.Get("gate-a"); g.State != domain.GateActive {
 		t.Fatalf("gate 상태 = %s, ACTIVE 여야 함", g.State)
 	}
 	it2 := enqueue(t, st, "gate-a", "BEEF", t0.Add(time.Second))
-	s.deliver(context.Background(), it2, time.Now())
+	s.deliver(context.Background(), it2, t0.Add(time.Second))
 	if len(f.reqs()) != 2 {
 		t.Errorf("다음 스캔이 전송돼야 함: %d", len(f.reqs()))
 	}
@@ -171,7 +171,7 @@ func TestAcceptanceB5TokenRevokedSuspends(t *testing.T) {
 	f := newFakeServer(t, response{404, `{"message":"resource not found","code":404,"InnerError":null,"data":null}`})
 	s, st, gates := newSender(t, f.srv.URL, clock.Real{})
 	it := enqueue(t, st, "gate-a", "ABCD", t0)
-	s.deliver(context.Background(), it, time.Now())
+	s.deliver(context.Background(), it, t0.Add(time.Second))
 
 	g, _ := gates.Get("gate-a")
 	if g.State != domain.GateSuspendedToken {
@@ -199,7 +199,7 @@ func TestRetryKeepsOriginalCheckedAt(t *testing.T) {
 	)
 	s, st, _ := newSender(t, f.srv.URL, clock.Real{})
 	it := enqueue(t, st, "gate-a", "ABCD", t0)
-	now := time.Now()
+	now := t0.Add(time.Second) // 결정론 — 실제 시각과 무관하게 만료 판정 회피
 	s.deliver(context.Background(), it, now)
 
 	if d, _ := st.Depth(); d != 1 {
@@ -242,7 +242,7 @@ func TestErrorBindHaltsGloballyAndKeepsRow(t *testing.T) {
 	f := newFakeServer(t, response{400, `{"message":"error bind","code":400,"data":null}`})
 	s, st, gates := newSender(t, f.srv.URL, clock.Real{})
 	it := enqueue(t, st, "gate-a", "ABCD", t0)
-	s.deliver(context.Background(), it, time.Now())
+	s.deliver(context.Background(), it, t0.Add(time.Second))
 
 	if gates.GlobalState() != domain.SenderHalted {
 		t.Fatal("전역 halt 여야 함")
@@ -266,9 +266,10 @@ func TestErrorBindHaltsGloballyAndKeepsRow(t *testing.T) {
 func TestExpiredItemNotSent(t *testing.T) {
 	f := newFakeServer(t)
 	s, st, _ := newSender(t, f.srv.URL, clock.Real{})
-	old := time.Now().Add(-25 * time.Hour)
+	now := t0.Add(time.Second)
+	old := now.Add(-25 * time.Hour) // 만료 임계(24h) 초과
 	it := enqueue(t, st, "gate-a", "ABCD", old)
-	s.deliver(context.Background(), it, time.Now())
+	s.deliver(context.Background(), it, now)
 	if len(f.reqs()) != 0 {
 		t.Error("만료 행은 서버에 보내지 않는다")
 	}

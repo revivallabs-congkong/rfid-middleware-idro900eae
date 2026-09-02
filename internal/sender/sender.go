@@ -33,6 +33,9 @@ type Sender struct {
 	// OnSuccess 는 체크인 확정(200/409 Complete) 관측 콜백이다 (선택 —
 	// lastSuccessAt·successSinceStart 기록용, GUI 설계 §6.1).
 	OnSuccess func(readerID string)
+	// OnServerContact 는 서버 통신 결과 관측 콜백이다 (선택 — 인터넷 연결
+	// 인디케이터용). ok=true 는 HTTP 응답 수신(코드 무관), false 는 transport 실패.
+	OnServerContact func(ok bool)
 
 	wake chan struct{}
 }
@@ -149,6 +152,9 @@ func (s *Sender) deliver(ctx context.Context, item *domain.QueueItem, now time.T
 	}
 
 	res := s.Client.CheckIn(ctx, token, item.EPC, item.CheckedAt)
+	if s.OnServerContact != nil {
+		s.OnServerContact(res.TransportErr == nil)
+	}
 	decision, class := congkong.Classify(res)
 
 	fields := logging.F{

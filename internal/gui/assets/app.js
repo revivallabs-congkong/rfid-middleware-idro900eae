@@ -47,6 +47,15 @@ function renderState(st) {
   LAST_STATE = st;
   $('dot').className = st.signal || 'gray';
   $('headline').textContent = st.headline || '';
+  // 수집 인디케이터
+  const ic = $('indCollect');
+  ic.className = 'ind ' + (st.collecting ? 'on' : 'off');
+  ic.querySelector('.itxt').textContent = st.collecting ? '수집 중' : '수집 중지';
+  // 인터넷 인디케이터
+  const inet = $('indNet');
+  inet.className = 'ind ' + (st.network === 'online' ? 'on' : st.network === 'offline' ? 'off' : 'wait');
+  inet.querySelector('.itxt').textContent =
+    st.network === 'online' ? '인터넷 연결됨' : st.network === 'offline' ? '인터넷 끊김' : '인터넷 확인 중';
   $('mode').textContent = META.mode === 'hosting'
     ? (st.coreRunning ? '호스팅 모드 — 수집 중' : '호스팅 모드 — 수집 중지')
     : (st.coreRunning ? '관측 모드 — 서비스 동작 중' : '관측 모드');

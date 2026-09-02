@@ -31,10 +31,11 @@ type guiApp struct {
 	dataDir string
 	maxAge  int
 
-	srv  *Server
-	mgr  *CatalogManager
-	core *CoreController // hosting 전용, observer 는 nil
-	ring *LogRing
+	srv    *Server
+	mgr    *CatalogManager
+	core   *CoreController // hosting 전용, observer 는 nil
+	ring   *LogRing
+	trayCh chan TrayState
 
 	mu  sync.Mutex
 	cfg *config.Config // 디스크 설정의 현재 뷰 (쓰기 후 reload)
@@ -124,6 +125,8 @@ func Run(ctx context.Context, opts Options) error {
 		ConfigSave:   ga.configSave,
 	}
 
+	trayCh := make(chan TrayState, 4)
+	ga.trayCh = trayCh
 	go srv.Serve()
 	if ga.dataDir != "" {
 		writeURLFile(ga.dataDir, srv.URL()) // 다른 인스턴스가 이 창을 열 수 있게
@@ -137,7 +140,7 @@ func Run(ctx context.Context, opts Options) error {
 			return true
 		}
 		return confirmQuit()
-	})
+	}, trayCh)
 	return nil
 }
 
@@ -215,6 +218,12 @@ func (ga *guiApp) stateLoop(ctx context.Context) {
 		key := st.Signal + st.Headline + st.UpdatedAt + fmt.Sprint(st.Catalog)
 		if key != lastKey || now.Sub(lastPush) >= 5*time.Second {
 			ga.srv.PushState(st)
+			if ga.trayCh != nil {
+				select {
+				case ga.trayCh <- TrayState{Signal: st.Signal, Collecting: st.Collecting, Network: st.Network}:
+				default:
+				}
+			}
 			lastKey, lastPush = key, now
 		}
 	}
@@ -229,6 +238,7 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 	if ga.mode == "hosting" && ga.core != nil && !ga.core.Running() {
 		st.Signal = "red"
 		st.CoreRunning = false
+		st.Collecting = false
 		st.Headline = "체크인 수집이 중지됨 — [수집 시작] 을 누르세요"
 		if e := ga.core.LastErr(); e != "" {
 			st.Headline = "코어 기동 실패 — " + e

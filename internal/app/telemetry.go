@@ -17,6 +17,10 @@ type telemetry struct {
 	ntpChecked bool
 	skewSec    int
 	skewAt     time.Time
+
+	serverOKAt   time.Time
+	serverFailAt time.Time
+	serverSeen   bool
 }
 
 type readerTele struct {
@@ -66,6 +70,28 @@ func (t *telemetry) setSkew(skewSec int, now time.Time) {
 	t.skewSec = skewSec
 	t.skewAt = now
 	t.mu.Unlock()
+}
+
+func (t *telemetry) serverContact(ok bool, now time.Time) {
+	t.mu.Lock()
+	t.serverSeen = true
+	if ok {
+		t.serverOKAt = now
+	} else {
+		t.serverFailAt = now
+	}
+	t.mu.Unlock()
+}
+
+// server 는 (관측됨, 온라인, 마지막 성공시각) 을 돌려준다. 온라인 판정은
+// 마지막 성공이 마지막 실패보다 나중인지다.
+func (t *telemetry) server() (bool, bool, time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.serverSeen {
+		return false, false, time.Time{}
+	}
+	return true, !t.serverOKAt.Before(t.serverFailAt) && !t.serverOKAt.IsZero(), t.serverOKAt
 }
 
 // queueDepthObserved 는 status 기록 시점의 큐 깊이로 nonEmptySince 를 갱신하고

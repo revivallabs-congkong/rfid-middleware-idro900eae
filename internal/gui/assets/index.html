@@ -14,6 +14,14 @@ header{display:flex;align-items:center;gap:12px;padding:14px 20px;background:var
 #dot.green{background:var(--green)}#dot.yellow{background:var(--yellow)}#dot.red{background:var(--red)}
 #headline{font-weight:700;font-size:16px;flex:1}
 .badge{font-size:12px;color:var(--sub);border:1px solid var(--line);border-radius:6px;padding:2px 8px;white-space:nowrap}
+.ind{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:600;border:1px solid var(--line);border-radius:16px;padding:3px 10px;white-space:nowrap}
+.ind .idot{width:9px;height:9px;border-radius:50%;background:var(--gray);flex:none}
+.ind.on{background:#f0fdf4;border-color:#bbf7d0;color:#166534}
+.ind.on .idot{background:var(--green)}
+.ind.off{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.ind.off .idot{background:var(--red)}
+.ind.wait{background:#fffbeb;border-color:#fde68a;color:#92400e}
+.ind.wait .idot{background:var(--yellow)}
 main{max-width:960px;margin:0 auto;padding:16px 20px 40px}
 h2{font-size:14px;color:var(--sub);margin:22px 0 8px}
 #cfgerr{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:12px;border-radius:8px;display:none;white-space:pre-wrap}
@@ -64,6 +72,8 @@ font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:bre
 <header>
   <div id="dot"></div>
   <div id="headline">연결 중…</div>
+  <span class="ind" id="indCollect"><span class="idot"></span><span class="itxt">수집</span></span>
+  <span class="ind" id="indNet"><span class="idot"></span><span class="itxt">인터넷</span></span>
   <span class="badge" id="mode">-</span>
   <span class="badge" id="ver">-</span>
 </header>
