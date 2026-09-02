@@ -5,6 +5,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -14,10 +15,22 @@ func OpenBrowser(url string) {
 	_ = exec.Command("open", url).Start()
 }
 
-func runTray(ctx context.Context, cancel context.CancelFunc, url string) {
+func runTray(ctx context.Context, cancel context.CancelFunc, url string, confirmQuit func() bool) {
 	fmt.Println("GUI:", url, "(Ctrl+C 로 종료)")
 	<-ctx.Done()
 	cancel()
+}
+
+// confirmQuit — 비 Windows 개발 환경은 항상 허용.
+func confirmQuit() bool { return true }
+
+// downloadsDir — 개발용 ~/Downloads.
+func downloadsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home + "/Downloads"
 }
 
 func serviceControl(configPath string) func(action string) error {

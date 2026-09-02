@@ -24,12 +24,28 @@ type State struct {
 	CoreVersion       string               `json:"coreVersion,omitempty"`
 	CoreMode          string               `json:"coreMode,omitempty"`
 	SuccessSinceStart int64                `json:"successSinceStart"`
+	LogDropped        int64                `json:"logDropped,omitempty"`
+	Catalog           *CatalogState        `json:"catalog,omitempty"`
 	Readers           []ReaderView         `json:"readers"`
 }
 
+// CatalogState 는 State 안의 카탈로그 요약이다 (GUI 설계 §4.3).
+type CatalogState struct {
+	Loaded          bool   `json:"loaded"`
+	EventName       string `json:"eventName,omitempty"`
+	ExportedAt      string `json:"exportedAt,omitempty"`
+	Stale           bool   `json:"stale,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable,omitempty"`
+	PendingImport   bool   `json:"pendingImport,omitempty"`
+	Error           string `json:"error,omitempty"`
+}
+
 type ReaderView struct {
-	ID            string `json:"id"`
-	SessionID     string `json:"sessionId,omitempty"`
+	ID              string `json:"id"`
+	SessionID       string `json:"sessionId,omitempty"`
+	SessionName     string `json:"sessionName,omitempty"`
+	SessionVerified bool   `json:"sessionVerified,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable,omitempty"`
 	ConnState     string `json:"connState"`
 	ConnSince     string `json:"connSince,omitempty"`
 	GateState     string `json:"gateState"`

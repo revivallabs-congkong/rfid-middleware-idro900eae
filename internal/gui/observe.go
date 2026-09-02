@@ -8,48 +8,14 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
-
-	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/health"
 )
 
-// Observer 는 관측 모드의 데이터 원천이다 (GUI 설계 §4.3, §2.4):
-// status.json 1초 폴링 + 당일 로그 파일 tail.
-type Observer struct {
-	DataDir          string
-	Mode             string
-	QueueMaxAgeHours int
-	Server           *Server
-}
-
-func (o *Observer) Run(ctx context.Context) {
-	go o.tailLogs(ctx)
-	statusPath := filepath.Join(o.DataDir, "status.json")
-	tick := time.NewTicker(time.Second)
-	defer tick.Stop()
-	var lastPush time.Time
-	var lastState string
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
-		now := time.Now()
-		s, err := health.ReadStatus(statusPath)
-		st := BuildState(s, err, o.Mode, now, o.QueueMaxAgeHours)
-		// 변경 시 즉시, 아니면 5초 하트비트
-		key := st.Signal + st.Headline + st.UpdatedAt
-		if key != lastState || now.Sub(lastPush) >= 5*time.Second {
-			o.Server.PushState(st)
-			lastState, lastPush = key, now
-		}
-	}
-}
-
-// tailLogs 는 logs/ 의 사전순 최신 middleware-*.jsonl 을 따라간다 (GUI 설계 §2.4).
-// 최초 열기 시 파일 끝으로 이동해 과거 로그를 쏟지 않는다.
-func (o *Observer) tailLogs(ctx context.Context) {
-	dir := filepath.Join(o.DataDir, "logs")
+// tailLogs 는 관측 모드에서 logs/ 의 사전순 최신 middleware-*.jsonl 을
+// 따라간다 (GUI 설계 §2.4). 최초 열기 시 파일 끝으로 이동해 과거 로그를
+// 쏟지 않고, 5초마다 회전(더 새로운 파일명)을 확인한다.
+// (호스팅 모드는 tail 대신 in-process LogRing 을 쓴다 — §6.3)
+func tailLogs(ctx context.Context, dataDir string, srv *Server) {
+	dir := filepath.Join(dataDir, "logs")
 	var f *os.File
 	var rd *bufio.Reader
 	var current string
@@ -97,7 +63,7 @@ func (o *Observer) tailLogs(ctx context.Context) {
 			for {
 				line, err := rd.ReadBytes('\n')
 				if len(line) > 1 {
-					o.Server.PushLog(line[:len(line)-1])
+					srv.PushLog(line[:len(line)-1])
 				}
 				if err != nil {
 					break

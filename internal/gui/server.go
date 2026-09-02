@@ -44,6 +44,21 @@ type Server struct {
 
 	// ServiceControl 은 "start"|"stop" 을 수행한다 (관측 모드 — CLI+UAC).
 	ServiceControl func(action string) error
+	// Hooks 는 오케스트레이터(guiApp)가 꽂는 동작들이다.
+	Hooks Hooks
+}
+
+type apiError struct {
+	Code    string
+	Message string
+}
+
+type Hooks struct {
+	ApplySession func(readerID, sessionID string) (any, *apiError)
+	Resume       func(readerID, pending, sessionID string) (any, *apiError)
+	CoreControl  func(action string) *apiError
+	CatalogView  func() any
+	CatalogOp    func(op string) *apiError
 }
 
 func NewServer(meta Meta) (*Server, error) {
@@ -79,6 +94,75 @@ func (s *Server) Serve() error {
 	mux.HandleFunc(prefix+"/api/meta", s.guard(s.handleMeta))
 	mux.HandleFunc(prefix+"/api/events", s.guard(s.handleEvents))
 	mux.HandleFunc(prefix+"/api/control/service", s.guard(s.handleServiceControl))
+	mux.HandleFunc("GET "+prefix+"/api/catalog", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		if s.Hooks.CatalogView == nil {
+			writeErr(w, 400, "catalog_error", "미지원")
+			return
+		}
+		writeOK(w, s.Hooks.CatalogView())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/catalog/{op}", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		if !s.confirmed(w, r) {
+			return
+		}
+		if e := s.Hooks.CatalogOp(r.PathValue("op")); e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, s.Hooks.CatalogView())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/readers/{id}/session", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			SessionID string `json:"sessionId"`
+			Confirm   bool   `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		res, e := s.Hooks.ApplySession(r.PathValue("id"), body.SessionID)
+		if e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, res)
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/readers/{id}/resume", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Pending   string `json:"pending"`
+			SessionID string `json:"sessionId"`
+			Confirm   bool   `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		if body.Pending != "send" && body.Pending != "discard" {
+			writeErr(w, 400, "invalid_request", "pending 은 send|discard")
+			return
+		}
+		res, e := s.Hooks.Resume(r.PathValue("id"), body.Pending, body.SessionID)
+		if e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, res)
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/control/core", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Action  string `json:"action"`
+			Confirm bool   `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		if e := s.Hooks.CoreControl(body.Action); e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, map[string]string{"action": body.Action})
+	}))
 	// nonce 없는 모든 경로는 404 (기본 mux 동작)
 	return http.Serve(s.ln, mux)
 }
@@ -100,6 +184,18 @@ func (s *Server) guard(h http.HandlerFunc) http.HandlerFunc {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'")
 		h(w, r)
 	}
+}
+
+// confirmed 는 body 의 confirm:true 를 강제한다 (단순 op 용).
+func (s *Server) confirmed(w http.ResponseWriter, r *http.Request) bool {
+	var body struct {
+		Confirm bool `json:"confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+		writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+		return false
+	}
+	return true
 }
 
 func writeOK(w http.ResponseWriter, data any) {
