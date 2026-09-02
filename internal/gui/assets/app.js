@@ -208,15 +208,20 @@ function renderCatalogBanners(st){
 function renderCatalog(){
   const c=CATALOG,bar=$('catbar'),box=$('sessions');if(!bar)return;
   if(!c||!c.loaded){bar.innerHTML='';
-    box.innerHTML='<div class="banner info">카탈로그 파일이 없습니다. 콩콩 콘솔에서 「미들웨어용 JSON 다운로드」로 받아 <b>'+esc(c&&c.path||'pulse-sessions.json')+'</b> 위치에 두거나 다운로드 폴더에 두면 자동 감지합니다.</div>';return;}
+    box.innerHTML='<div class="banner info">카탈로그 파일이 없습니다. 콩콩 콘솔에서 「미들웨어용 JSON 다운로드」로 받은 파일을 아래에서 선택하세요.</div>'+
+      '<div class="wsetup"><button class="btn primary" id="catPick">카탈로그 파일 선택</button>'+
+      '<span class="tag-note">다운로드 폴더에 두면 자동으로도 감지됩니다</span></div>';
+    const pk=$('catPick');if(pk)pk.onclick=pickCatalogFile;return;}
   bar.innerHTML='이벤트 <b>'+esc(c.eventName)+'</b> · 기준 '+esc((c.exportedAt||'').slice(0,16).replace('T',' '))+
     ' <button class="btn sm" id="catRefresh">새로고침</button>'+
+    ' <button class="btn sm" id="catPick2">다른 파일 선택</button>'+
     (selectTarget?' <b>'+esc(selectTarget)+'</b> 리더에 지정할 세션을 클릭하세요 <button class="btn sm" id="pickCancel">취소</button>':'');
   const rows=(c.sessions||[]).map(s=>'<tr class="'+(selectTarget?'pick':'')+'" data-s="'+esc(s.id)+'">'+
     '<td>'+esc(s.name)+'</td><td>'+esc(s.unitName)+'</td><td>'+esc(s.tokenLabel||'—')+'</td>'+
     '<td>'+esc(s.assignedReaderId||'—')+'</td></tr>').join('');
   box.innerHTML='<table class="tbl"><tr><th>세션</th><th>유닛</th><th>라벨</th><th>지정된 리더</th></tr>'+rows+'</table>';
   const rf=$('catRefresh');if(rf)rf.onclick=async()=>{await api('api/catalog/refresh',{confirm:true});loadCatalog();};
+  const pk2=$('catPick2');if(pk2)pk2.onclick=pickCatalogFile;
   const pc=$('pickCancel');if(pc)pc.onclick=()=>{selectTarget=null;renderCatalog();};
   if(selectTarget)box.querySelectorAll('tr.pick').forEach(tr=>tr.onclick=()=>applySession(selectTarget,tr.dataset.s));
   // 리더별 세션 선택 버튼
@@ -249,6 +254,19 @@ function resumeDialog(readerId){
 async function doResume(readerId,pending,sessionId){
   const j=await api('api/readers/'+encodeURIComponent(readerId)+'/resume',{pending,sessionId:sessionId||'',confirm:true});
   if(j.ok)toast(j.data.message||'재개됨');else modal('재개 실패',j.error?.message||'오류',[['닫기','primary',null]]);
+}
+// 파일 선택 → 내용을 서버로 업로드 (Downloads 자동 감지에 의존하지 않는 확실한 경로)
+function pickCatalogFile(){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='.json,application/json';
+  inp.onchange=async()=>{
+    const f=inp.files&&inp.files[0];if(!f)return;
+    let text;try{text=await f.text();}catch(e){modal('읽기 실패',String(e),[['닫기','primary',null]]);return;}
+    const j=await api('api/catalog-upload',{content:text,confirm:true});
+    if(j.ok){CATALOG=j.data;renderCatalog();toast('카탈로그를 불러왔습니다');}
+    else modal('불러오기 실패',j.error?.message||'파일을 확인하세요',[['닫기','primary',null]]);
+  };
+  inp.click();
 }
 async function importCatalog(){
   const j=await api('api/catalog/import',{confirm:true});

@@ -88,17 +88,25 @@ func (m *CatalogManager) scanDownloads() {
 		return
 	}
 	matches, _ := filepath.Glob(filepath.Join(m.DownloadsDir, "pulse-sessions*.json"))
+	// 현재 로드된 카탈로그 파일의 mtime — 이보다 새 다운로드만 후보로.
+	// (실행 전 받아둔 파일도 잡되, 이미 반영한 파일은 다시 권하지 않도록)
+	var loadedMtime time.Time
+	if fi, err := os.Stat(m.Path); err == nil {
+		loadedMtime = fi.ModTime()
+	}
 	var candidates []string
 	for _, p := range matches {
 		fi, err := os.Stat(p)
-		if err != nil || fi.ModTime().Before(m.startedAt) {
+		if err != nil {
 			continue
 		}
-		// 브라우저 임시 파일 제외
 		if strings.HasSuffix(p, ".crdownload") || strings.HasSuffix(p, ".part") {
 			continue
 		}
-		candidates = append(candidates, p)
+		// 로드된 카탈로그가 없거나(loadedMtime zero) 다운로드가 더 새 것일 때만
+		if loadedMtime.IsZero() || fi.ModTime().After(loadedMtime) {
+			candidates = append(candidates, p)
+		}
 	}
 	if len(candidates) == 0 {
 		return
@@ -140,6 +148,22 @@ func (m *CatalogManager) Import() error {
 	m.mu.Lock()
 	m.pendingImport = ""
 	m.mu.Unlock()
+	m.reload(true)
+	return nil
+}
+
+// ImportContent 는 파일 선택 업로드용 — 내용을 검증한 뒤 sessionsFile 로
+// 저장하고 재로드한다. Downloads 자동 감지에 의존하지 않는 확실한 경로.
+func (m *CatalogManager) ImportContent(b []byte) error {
+	if _, err := ParseCatalog(b); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(m.Path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(m.Path, b, 0o600); err != nil {
+		return err
+	}
 	m.reload(true)
 	return nil
 }

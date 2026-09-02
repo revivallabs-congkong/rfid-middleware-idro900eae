@@ -60,13 +60,18 @@ type catalogWire struct {
 	} `json:"sessions"`
 }
 
-// LoadCatalog 는 §3.2 규칙대로 파싱한다. version≠1 은 전체 거부, 항목 단위
-// 오류(토큰 형식·id 중복)는 해당 항목만 제외하고 Warnings 에 남긴다.
+// LoadCatalog 는 파일을 읽어 §3.2 규칙대로 파싱한다.
 func LoadCatalog(path string) (*Catalog, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
+	return ParseCatalog(b)
+}
+
+// ParseCatalog 는 바이트를 §3.2 규칙대로 파싱한다. version≠1 은 전체 거부,
+// 항목 단위 오류(토큰 형식·id 중복)는 해당 항목만 제외하고 Warnings 에 남긴다.
+func ParseCatalog(b []byte) (*Catalog, error) {
 	var w catalogWire
 	if err := json.Unmarshal(b, &w); err != nil {
 		return nil, fmt.Errorf("카탈로그 파싱 실패: %w", err)

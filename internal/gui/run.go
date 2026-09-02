@@ -134,6 +134,7 @@ func Run(ctx context.Context, opts Options) error {
 		CoreControl:   ga.coreControl,
 		CatalogView:   ga.catalogView,
 		CatalogOp:     ga.catalogOp,
+		CatalogUpload: ga.catalogUpload,
 		ConfigView:    ga.configView,
 		ConfigSave:    ga.configSave,
 		WizardStart:   func(rid string, steps []string) *apiError { return ga.wiz.Start(rid, steps) },
@@ -701,6 +702,17 @@ func (ga *guiApp) catalogOp(op string) *apiError {
 		return nil
 	}
 	return &apiError{"invalid_request", "지원하지 않는 동작"}
+}
+
+// catalogUpload 는 파일 선택 업로드다 — 내용을 검증·저장한다.
+func (ga *guiApp) catalogUpload(content []byte) *apiError {
+	if ga.mgr == nil {
+		return &apiError{"catalog_error", "설정이 없어 카탈로그를 쓸 수 없습니다"}
+	}
+	if err := ga.mgr.ImportContent(content); err != nil {
+		return &apiError{"catalog_error", "카탈로그 파일 오류: " + err.Error()}
+	}
+	return nil
 }
 
 // CfgFingerprint 는 설정 지문이다 (GUI 설계 §1.1): 토큰 필드를 각 토큰

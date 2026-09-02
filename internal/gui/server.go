@@ -57,8 +57,9 @@ type Hooks struct {
 	ApplySession func(readerID, sessionID string) (any, *apiError)
 	Resume       func(readerID, pending, sessionID string) (any, *apiError)
 	CoreControl  func(action string) *apiError
-	CatalogView  func() any
-	CatalogOp    func(op string) *apiError
+	CatalogView   func() any
+	CatalogOp     func(op string) *apiError
+	CatalogUpload func(content []byte) *apiError
 	ConfigView    func() any
 	ConfigSave    func(e ConfigEdit) (any, *apiError)
 	WizardStart   func(readerID string, steps []string) *apiError
@@ -113,6 +114,21 @@ func (s *Server) Serve() error {
 			return
 		}
 		if e := s.Hooks.CatalogOp(r.PathValue("op")); e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, s.Hooks.CatalogView())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/catalog-upload", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content string `json:"content"`
+			Confirm bool   `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm || body.Content == "" {
+			writeErr(w, 400, "invalid_request", "파일 내용이 필요합니다")
+			return
+		}
+		if e := s.Hooks.CatalogUpload([]byte(body.Content)); e != nil {
 			writeErr(w, 400, e.Code, e.Message)
 			return
 		}

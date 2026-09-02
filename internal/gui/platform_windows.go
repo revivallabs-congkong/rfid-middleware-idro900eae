@@ -121,11 +121,14 @@ func confirmQuit() bool {
 // downloadsDir 는 실제 다운로드 폴더다 (KnownFolders — OneDrive 리다이렉션
 // 대응, M0 확인 항목).
 func downloadsDir() string {
-	p, err := windows.KnownFolderPath(windows.FOLDERID_Downloads, 0)
-	if err != nil {
-		return ""
+	if p, err := windows.KnownFolderPath(windows.FOLDERID_Downloads, 0); err == nil && p != "" {
+		return p
 	}
-	return p
+	// 폴백 — KnownFolders 실패 시 %USERPROFILE%\Downloads
+	if up := os.Getenv("USERPROFILE"); up != "" {
+		return up + `\Downloads`
+	}
+	return ""
 }
 
 // serviceControl 은 자기 exe 를 관리자 권한으로 재실행해 서비스를 제어한다
