@@ -42,7 +42,13 @@ th,td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left}
 th{background:#fafafa;color:var(--sub);font-weight:600}
 tr.selectable:hover{background:#f0f6ff;cursor:pointer}
 #logbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
-select,input[type=text]{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px}
+select,input[type=text],input[type=number]{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px}
+#cfgView table{margin-top:4px}
+#cfgView .fld{display:grid;grid-template-columns:140px 1fr;gap:6px;align-items:center;margin:4px 0;font-size:13px}
+#cfgView .fld label{color:var(--sub)}
+#cfgView input{width:100%}
+.rdrRow{display:flex;gap:6px;margin:4px 0;align-items:center}
+.rdrRow input{flex:1}
 #logs{background:#101014;color:#d6d6dd;border-radius:10px;padding:10px;height:320px;overflow-y:auto;
 font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:break-all}
 .lw{color:#facc15}.le{color:#f87171}.ld{color:#6b7280}
@@ -74,6 +80,9 @@ font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:bre
   <div id="catBanners"></div>
   <div id="catbar"></div>
   <div id="sessions"></div>
+
+  <h2>설정 <button id="cfgEdit" style="font-size:12px">편집</button></h2>
+  <div id="cfgView"></div>
 
   <h2>실시간 로그</h2>
   <div id="logbar">

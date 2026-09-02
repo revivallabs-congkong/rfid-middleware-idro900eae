@@ -55,6 +55,11 @@ func AcquireLock(dataDir string) (func(), error) {
 	return acquireLock(filepath.Join(dataDir, "app.lock"))
 }
 
+// AcquireNamedLock 은 지정 경로의 배타 잠금을 획득한다 (GUI 단일 인스턴스용).
+func AcquireNamedLock(path string) (func(), error) {
+	return acquireLock(path)
+}
+
 // Run 은 ctx 취소(또는 replay drain 완료)까지 전체 파이프라인을 실행한다.
 // foreground 와 Windows Service 양쪽이 같은 이 함수를 호출한다 (설계서 §10).
 func Run(ctx context.Context, opts Options) error {

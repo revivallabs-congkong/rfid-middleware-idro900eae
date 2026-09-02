@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/config"
 )
@@ -68,6 +69,104 @@ func WriteReaderSession(cfgPath, readerID, sessionID, token string) (bak string,
 	}
 	if err := f.Close(); err != nil {
 		os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, cfgPath); err != nil {
+		os.Remove(tmp)
+		return "", err
+	}
+	return bak, nil
+}
+
+// ConfigEdit 은 설정 UI 가 편집하는 필드다. 토큰은 여기서 다루지 않는다 —
+// 토큰은 세션 선택으로만 들어간다 (GUI 설계 §3, plan §2.2). 기존 리더의
+// 토큰·sessionId 는 보존한다.
+type ConfigEdit struct {
+	APIHost           string       `json:"apiHost"`
+	DataDir           string       `json:"dataDir"`
+	DebounceSec       int          `json:"debounceSec"`
+	QueueMaxAgeHours  int          `json:"queueMaxAgeHours"`
+	RequestTimeoutSec int          `json:"requestTimeoutSec"`
+	PowerGain         int          `json:"powerGain"`
+	Buzzer            int          `json:"buzzer"`
+	LogLevel          string       `json:"logLevel"`
+	SessionsFile      string       `json:"sessionsFile"`
+	Readers           []ReaderEdit `json:"readers"`
+}
+
+type ReaderEdit struct {
+	ID   string `json:"id"`
+	Addr string `json:"addr"`
+}
+
+// WriteConfig 는 설정 UI 의 편집을 반영한다: 기존 파일에서 리더 토큰을
+// 보존하며 전역 필드·리더 목록(addr)을 교체한다. 신규 리더는 빈 토큰(0×64)
+// placeholder 로 만들어 이후 세션 선택으로 채운다. 백업→검증→원자적 쓰기.
+func WriteConfig(cfgPath string, e ConfigEdit) (bak string, err error) {
+	raw, _ := os.ReadFile(cfgPath) // 없으면 신규 생성
+	oldTokens := map[string][2]string{}
+	if len(raw) > 0 {
+		var old map[string]any
+		if json.Unmarshal(raw, &old) == nil {
+			if rs, ok := old["readers"].([]any); ok {
+				for _, ri := range rs {
+					if r, ok := ri.(map[string]any); ok {
+						id, _ := r["id"].(string)
+						tok, _ := r["pulseToken"].(string)
+						sid, _ := r["sessionId"].(string)
+						oldTokens[id] = [2]string{tok, sid}
+					}
+				}
+			}
+		}
+	}
+
+	m := map[string]any{
+		"version": 1, "apiHost": e.APIHost, "dataDir": e.DataDir,
+		"debounceSec": e.DebounceSec, "queueMaxAgeHours": e.QueueMaxAgeHours,
+		"requestTimeoutSec": e.RequestTimeoutSec, "powerGain": e.PowerGain,
+		"buzzer": e.Buzzer, "logLevel": e.LogLevel,
+	}
+	if e.SessionsFile != "" {
+		m["sessionsFile"] = e.SessionsFile
+	}
+	var readers []map[string]any
+	for _, r := range e.Readers {
+		tok := "0000000000000000000000000000000000000000000000000000000000000000"
+		sid := ""
+		if prev, ok := oldTokens[r.ID]; ok {
+			if prev[0] != "" {
+				tok = prev[0]
+			}
+			sid = prev[1]
+		}
+		rm := map[string]any{"id": r.ID, "addr": r.Addr, "pulseToken": tok}
+		if sid != "" {
+			rm["sessionId"] = sid
+		}
+		readers = append(readers, rm)
+	}
+	m["readers"] = readers
+
+	out, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if _, err := config.Parse(bytesReader(out)); err != nil {
+		return "", fmt.Errorf("설정이 검증을 통과하지 못했습니다: %w", err)
+	}
+
+	if len(raw) > 0 {
+		bak = cfgPath + ".bak"
+		if err := os.WriteFile(bak, raw, 0o600); err != nil {
+			return "", err
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
+		return "", err
+	}
+	tmp := cfgPath + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o600); err != nil {
 		return "", err
 	}
 	if err := os.Rename(tmp, cfgPath); err != nil {

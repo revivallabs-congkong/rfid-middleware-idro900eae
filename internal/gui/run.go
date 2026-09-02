@@ -6,7 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,9 +54,26 @@ func Run(ctx context.Context, opts Options) error {
 		ga.maxAge = cfg.QueueMaxAgeHours
 		meta.DataDir = cfg.DataDir
 		meta.CfgFingerprint = CfgFingerprint(cfg)
-		// 모드 중재 — 잠금이 비어 있으면 호스팅 (§6.5)
-		if release, err := app.AcquireLock(cfg.DataDir); err == nil {
-			release() // 확인만 하고 놓는다 — Start 가 다시 잡는다
+	}
+
+	// 단일 인스턴스 — 이미 GUI 가 떠 있으면 그 창을 다시 열고 종료한다
+	// (GUI 설계 §7.1). 두 번째 트레이 아이콘이 생기지 않게 한다.
+	if ga.dataDir != "" {
+		if err := ensureDir(ga.dataDir); err == nil {
+			guiLock := filepath.Join(ga.dataDir, "gui.lock")
+			release, lerr := app.AcquireNamedLock(guiLock)
+			if lerr != nil {
+				// 다른 GUI 실행 중 — 그 URL 을 열고 조용히 종료
+				if u := readURLFile(ga.dataDir); u != "" {
+					OpenBrowser(u)
+				}
+				return nil
+			}
+			defer release()
+		}
+		// 모드 중재 — app.lock 이 비어 있으면 호스팅 (§6.5)
+		if release, err := app.AcquireLock(ga.dataDir); err == nil {
+			release()
 			ga.mode = "hosting"
 		}
 	}
@@ -101,10 +120,13 @@ func Run(ctx context.Context, opts Options) error {
 		CoreControl:  ga.coreControl,
 		CatalogView:  ga.catalogView,
 		CatalogOp:    ga.catalogOp,
+		ConfigView:   ga.configView,
+		ConfigSave:   ga.configSave,
 	}
 
 	go srv.Serve()
 	if ga.dataDir != "" {
+		writeURLFile(ga.dataDir, srv.URL()) // 다른 인스턴스가 이 창을 열 수 있게
 		go ga.stateLoop(runCtx)
 	}
 	OpenBrowser(srv.URL())
@@ -117,6 +139,31 @@ func Run(ctx context.Context, opts Options) error {
 		return confirmQuit()
 	})
 	return nil
+}
+
+func ensureDir(dir string) error { return os.MkdirAll(dir, 0o755) }
+
+func readFile(p string) ([]byte, error) { return os.ReadFile(p) }
+
+// defaultDataDir 은 신규 설정의 기본 dataDir 이다. Windows 는 ProgramData,
+// 그 외는 exe 옆 data (개발용).
+func defaultDataDir(exeDir string) string {
+	if pd := os.Getenv("ProgramData"); pd != "" {
+		return filepath.Join(pd, "CongKong", "RFIDMiddleware")
+	}
+	return filepath.Join(exeDir, "data")
+}
+
+func urlFilePath(dataDir string) string { return filepath.Join(dataDir, "gui.url") }
+
+func writeURLFile(dataDir, url string) { _ = os.WriteFile(urlFilePath(dataDir), []byte(url), 0o600) }
+
+func readURLFile(dataDir string) string {
+	b, err := os.ReadFile(urlFilePath(dataDir))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 func (ga *guiApp) catalogPath() string {
@@ -419,6 +466,99 @@ func (ga *guiApp) catalogView() any {
 	out["warnings"] = cat.Warnings
 	out["sessions"] = sessions
 	return out
+}
+
+// configView 는 설정 UI 초기값이다. 토큰 전문은 절대 내보내지 않는다 —
+// 리더별 토큰 지정 여부만 알린다.
+func (ga *guiApp) configView() any {
+	raw, err := readFile(ga.cfgPath)
+	if err != nil {
+		// 파일 없음 — 기본값 템플릿 (온보딩)
+		exeDir := filepath.Dir(ga.cfgPath)
+		return map[string]any{
+			"exists": false,
+			"config": ConfigEdit{
+				APIHost: "https://api.congkong.net", DataDir: defaultDataDir(exeDir),
+				DebounceSec: 60, QueueMaxAgeHours: 24, RequestTimeoutSec: 10,
+				PowerGain: 300, Buzzer: 0, LogLevel: "info", SessionsFile: "",
+				Readers: []ReaderEdit{{ID: "gate-a", Addr: "192.168.9.6:5578"}},
+			},
+		}
+	}
+	var m map[string]any
+	json.Unmarshal(raw, &m)
+	// 토큰 지정 여부만 부가 정보로
+	tokenSet := map[string]bool{}
+	if rs, ok := m["readers"].([]any); ok {
+		for _, ri := range rs {
+			if r, ok := ri.(map[string]any); ok {
+				id, _ := r["id"].(string)
+				tok, _ := r["pulseToken"].(string)
+				tokenSet[id] = tok != "" && tok != "0000000000000000000000000000000000000000000000000000000000000000"
+			}
+		}
+	}
+	ga.mu.Lock()
+	cfg := ga.cfg
+	ga.mu.Unlock()
+	edit := ConfigEdit{LogLevel: "info"}
+	if cfg != nil {
+		edit = ConfigEdit{
+			APIHost: cfg.APIHost, DataDir: cfg.DataDir, DebounceSec: cfg.DebounceSec,
+			QueueMaxAgeHours: cfg.QueueMaxAgeHours, RequestTimeoutSec: cfg.RequestTimeoutSec,
+			PowerGain: cfg.PowerGain, Buzzer: cfg.Buzzer, LogLevel: cfg.LogLevel,
+			SessionsFile: cfg.SessionsFile,
+		}
+		for _, r := range cfg.Readers {
+			edit.Readers = append(edit.Readers, ReaderEdit{ID: r.ID, Addr: r.Addr})
+		}
+	}
+	return map[string]any{"exists": true, "config": edit, "tokenSet": tokenSet}
+}
+
+// configSave 는 설정 UI 저장이다: 검증→백업→쓰기→(호스팅) 재기동, 실패 시 롤백.
+func (ga *guiApp) configSave(e ConfigEdit) (any, *apiError) {
+	if len(e.Readers) == 0 {
+		return nil, &apiError{"invalid_request", "리더를 최소 1개 설정하세요"}
+	}
+	bak, err := WriteConfig(ga.cfgPath, e)
+	if err != nil {
+		return nil, &apiError{"invalid_request", err.Error()}
+	}
+	// 새 설정 로드 시도 — 실패하면 롤백
+	if _, lerr := config.Load(ga.cfgPath); lerr != nil {
+		if bak != "" {
+			RollbackConfig(ga.cfgPath, bak)
+		}
+		return nil, &apiError{"invalid_request", "저장한 설정을 읽을 수 없습니다: " + lerr.Error()}
+	}
+	needRestart := false
+	if ga.mode == "hosting" && ga.core != nil {
+		if rerr := ga.core.Restart(context.Background()); rerr != nil {
+			if bak != "" {
+				RollbackConfig(ga.cfgPath, bak)
+			}
+			ga.core.Start(context.Background())
+			return nil, &apiError{"core_restart_failed", "재기동 실패로 이전 설정으로 되돌렸습니다: " + rerr.Error()}
+		}
+	} else {
+		needRestart = true
+	}
+	if bak != "" {
+		RemoveBackup(bak)
+	}
+	ga.reloadCfg()
+	ga.mu.Lock()
+	if ga.cfg != nil {
+		ga.dataDir = ga.cfg.DataDir
+		ga.maxAge = ga.cfg.QueueMaxAgeHours
+	}
+	ga.mu.Unlock()
+	msg := "설정을 저장하고 적용했습니다"
+	if needRestart {
+		msg = "설정을 저장했습니다 — 서비스를 재시작해야 적용됩니다"
+	}
+	return applyResult{NeedsServiceRestart: needRestart, Message: msg}, nil
 }
 
 func (ga *guiApp) catalogOp(op string) *apiError {

@@ -266,6 +266,88 @@ async function importCatalog() {
   else modal('가져오기 실패', j.error?.message || '', [['닫기', 'primary', null]]);
 }
 
+// ─── 설정 ───
+let CFG = null, cfgEditing = false;
+async function loadConfig() {
+  const j = await api('api/config');
+  if (j.ok) { CFG = j.data; renderConfig(); }
+}
+function renderConfig() {
+  const el = $('cfgView');
+  if (!CFG) { el.innerHTML = ''; return; }
+  const c = CFG.config;
+  if (!cfgEditing) {
+    const rlist = (c.readers || []).map(r =>
+      '· <b>' + esc(r.id) + '</b> — ' + esc(r.addr) +
+      (CFG.tokenSet && CFG.tokenSet[r.id] ? ' <span class="state-ok">토큰 지정됨</span>' : ' <span class="state-warn">토큰 미지정(세션 선택 필요)</span>')
+    ).join('<br>');
+    el.innerHTML = '<div class="banner info" style="background:#fff;border-color:var(--line);color:var(--txt)">' +
+      '서버: ' + esc(c.apiHost) + '<br>데이터 폴더: ' + esc(c.dataDir) +
+      '<br>디바운스: ' + c.debounceSec + '초 · 출력: ' + c.powerGain + ' · 부저: ' + (c.buzzer ? '켬' : '끔') +
+      ' · 로그: ' + esc(c.logLevel) +
+      '<br>세션 파일: ' + esc(c.sessionsFile || '(기본: config 옆 pulse-sessions.json)') +
+      '<br><br>리더:<br>' + rlist + '</div>';
+    $('cfgEdit').textContent = '편집';
+    return;
+  }
+  // 편집 폼
+  const f = (label, key, type) =>
+    '<div class="fld"><label>' + label + '</label>' +
+    '<input data-k="' + key + '" type="' + (type || 'text') + '" value="' + esc(c[key] ?? '') + '"></div>';
+  let html = f('서버 apiHost', 'apiHost') + f('데이터 폴더', 'dataDir') +
+    f('디바운스(초)', 'debounceSec', 'number') + f('큐 보관(시간)', 'queueMaxAgeHours', 'number') +
+    f('요청 타임아웃(초)', 'requestTimeoutSec', 'number') + f('출력 powerGain', 'powerGain', 'number') +
+    '<div class="fld"><label>부저</label><select data-k="buzzer"><option value="0"' + (c.buzzer ? '' : ' selected') + '>끔</option><option value="1"' + (c.buzzer ? ' selected' : '') + '>켬</option></select></div>' +
+    '<div class="fld"><label>로그 레벨</label><select data-k="logLevel">' +
+      ['debug','info','warn','error'].map(l => '<option' + (c.logLevel === l ? ' selected' : '') + '>' + l + '</option>').join('') +
+    '</select></div>' +
+    f('세션 파일 경로', 'sessionsFile') +
+    '<div style="margin-top:10px"><b>리더</b> <button id="rdrAdd">+ 리더 추가</button></div><div id="rdrList"></div>' +
+    '<div style="margin-top:12px"><button class="primary" id="cfgSave">저장 및 적용</button> <button id="cfgCancel">취소</button> <span id="cfgMsg" class="badge" style="display:none"></span></div>';
+  el.innerHTML = html;
+  $('cfgEdit').textContent = '편집 취소';
+  renderReaderRows(c.readers || []);
+  el.querySelectorAll('[data-k]').forEach(inp => {
+    inp.oninput = () => {
+      const k = inp.dataset.k;
+      c[k] = (inp.type === 'number' || k === 'buzzer') ? Number(inp.value) : inp.value;
+    };
+  });
+  $('rdrAdd').onclick = () => { c.readers.push({id: 'gate-' + String.fromCharCode(97 + c.readers.length), addr: '192.168.9.6:5578'}); renderReaderRows(c.readers); };
+  $('cfgCancel').onclick = () => { cfgEditing = false; loadConfig(); };
+  $('cfgSave').onclick = saveConfig;
+}
+function renderReaderRows(readers) {
+  const box = $('rdrList');
+  box.innerHTML = '';
+  readers.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'rdrRow';
+    row.innerHTML = '<input placeholder="id" value="' + esc(r.id) + '" data-i="' + i + '" data-f="id">' +
+      '<input placeholder="주소 (IP:포트)" value="' + esc(r.addr) + '" data-i="' + i + '" data-f="addr">' +
+      '<button data-del="' + i + '">삭제</button>';
+    box.appendChild(row);
+  });
+  box.querySelectorAll('input').forEach(inp => {
+    inp.oninput = () => { readers[inp.dataset.i][inp.dataset.f] = inp.value; };
+  });
+  box.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => { readers.splice(Number(b.dataset.del), 1); renderReaderRows(readers); };
+  });
+}
+function saveConfig() {
+  modal('설정 저장', '설정을 저장하고 적용할까요?' +
+    (META.mode === 'hosting' ? '\n적용을 위해 수집이 잠시 재시작됩니다.' : '\n관측 모드에서는 서비스 재시작이 필요합니다.'), [
+    ['취소', '', null],
+    ['저장', 'primary', async () => {
+      const j = await api('api/config', {config: CFG.config, confirm: true});
+      if (j.ok) { cfgEditing = false; ctrlMsg(j.data.message || '저장됨'); loadConfig(); loadCatalog(); }
+      else modal('저장 실패', j.error?.message || '', [['닫기', 'primary', null]]);
+    }],
+  ]);
+}
+$('cfgEdit').onclick = () => { cfgEditing = !cfgEditing; renderConfig(); };
+
 // ─── 로그 ───
 function appendLog(raw) {
   let o;
@@ -313,6 +395,7 @@ fetch('api/meta').then(r => r.json()).then(({data}) => {
   }
   renderCtrl(LAST_STATE);
   loadCatalog();
+  loadConfig();
 });
 
 function connectSSE() {

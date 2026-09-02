@@ -59,6 +59,8 @@ type Hooks struct {
 	CoreControl  func(action string) *apiError
 	CatalogView  func() any
 	CatalogOp    func(op string) *apiError
+	ConfigView   func() any
+	ConfigSave   func(e ConfigEdit) (any, *apiError)
 }
 
 func NewServer(meta Meta) (*Server, error) {
@@ -142,6 +144,29 @@ func (s *Server) Serve() error {
 			return
 		}
 		res, e := s.Hooks.Resume(r.PathValue("id"), body.Pending, body.SessionID)
+		if e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, res)
+	}))
+	mux.HandleFunc("GET "+prefix+"/api/config", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		if s.Hooks.ConfigView == nil {
+			writeErr(w, 400, "invalid_request", "미지원")
+			return
+		}
+		writeOK(w, s.Hooks.ConfigView())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/config", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Config  ConfigEdit `json:"config"`
+			Confirm bool       `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		res, e := s.Hooks.ConfigSave(body.Config)
 		if e != nil {
 			writeErr(w, 400, e.Code, e.Message)
 			return
