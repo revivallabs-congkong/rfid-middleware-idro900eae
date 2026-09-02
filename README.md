@@ -6,7 +6,7 @@ Windows 상주 프로그램. Go 단일 바이너리, CGO 없음.
 - 계획서: `congkong-v3/docs/features/pulse/rfid-middleware-idro900eae-development-plan.ko.md`
 - 설계서: `congkong-v3/docs/02-design/features/rfid-middleware-idro900eae.design.md`
 - 리더 SSOT: `IDRO900EAE-settings.md` / 서버 SSOT: `rfid-middleware-protocol.ko.md` v1.1
-- 이 저장소 안 문서: [운영 API smoke 절차](docs/ops-smoke.ko.md) · [리더 명령·재접속 동작](docs/reader-recovery.ko.md) · [프로그램 다운 시 복구](docs/crash-recovery.ko.md) · [인수인계](HANDOFF.ko.md)
+- 이 저장소 안 문서: [운영 API smoke 절차](docs/ops-smoke.ko.md) · [리더 명령·재접속 동작](docs/reader-recovery.ko.md) · [프로그램 다운 시 복구](docs/crash-recovery.ko.md) · [로그 관리·용량](docs/log-management.ko.md) · [인수인계](HANDOFF.ko.md)
 
 ## 빠른 시작
 
