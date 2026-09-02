@@ -58,15 +58,16 @@ Name: "{autodesktop}\CongKong RFID 콘솔"; Filename: "{app}\rfid-middleware.exe
 ; 데이터 폴더에 사용자 쓰기 권한을 확실히 부여 (icacls — [Dirs] 보완).
 Filename: "icacls"; Parameters: """{#DataDir}"" /grant *S-1-5-32-545:(OI)(CI)M /T /C"; Flags: runhidden; StatusMsg: "데이터 폴더 권한 설정 중..."
 ; 서비스 등록 (옵션). config.json 은 [Code] ssPostInstall 에서 이미 준비됨.
+; 서비스는 등록만 한다(자동 시작하지 않는다). 최초 실행은 사람이 콘솔을 열어
+; 세션을 설정하고 수집을 켠다. 서비스는 이후 재부팅부터 무인 자동 시작한다.
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service install --config ""{#ConfigPath}"""; Flags: runhidden waituntilterminated; Tasks: svc; StatusMsg: "서비스를 등록하는 중..."
-Filename: "{app}\rfid-middleware.exe"; Parameters: "service start"; Flags: runhidden waituntilterminated; Tasks: svc
 ; 행사용 전원 설정 (옵션)
 Filename: "powercfg"; Parameters: "/change standby-timeout-ac 0"; Flags: runhidden; Tasks: power
 Filename: "powercfg"; Parameters: "/change monitor-timeout-ac 0"; Flags: runhidden; Tasks: power
 Filename: "powercfg"; Parameters: "/change hibernate-timeout-ac 0"; Flags: runhidden; Tasks: power
 Filename: "powercfg"; Parameters: "/change disk-timeout-ac 0"; Flags: runhidden; Tasks: power
-; 설치 마침 후 콘솔 열기 (서비스 미등록 시 = GUI 우선 흐름)
-Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}"""; Description: "지금 콘솔 열기"; Flags: postinstall nowait skipifsilent; Tasks: not svc
+; 설치 마침 후 콘솔 열기 — 최초 실행은 사람이 콘솔에서 세션 설정·수집 시작
+Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}"""; Description: "지금 콘솔 열기 (세션 설정·수집 시작)"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 ; 서비스 중지·해제. 데이터 폴더(큐·로그)는 보존한다.

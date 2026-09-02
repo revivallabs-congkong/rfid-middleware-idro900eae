@@ -224,11 +224,18 @@ function renderCatalog(){
   const pk2=$('catPick2');if(pk2)pk2.onclick=pickCatalogFile;
   const pc=$('pickCancel');if(pc)pc.onclick=()=>{selectTarget=null;renderCatalog();};
   if(selectTarget)box.querySelectorAll('tr.pick').forEach(tr=>tr.onclick=()=>applySession(selectTarget,tr.dataset.s));
-  // 리더별 세션 선택 버튼
-  if(!selectTarget&&LAST_STATE){
+  // 리더별 세션 선택 버튼 — 리더 목록은 config(항상 존재)에서. 대기 상태에선
+  // LAST_STATE.readers 가 비어 있으므로 config 를 써야 버튼이 나온다.
+  if(!selectTarget){
+    const ids=wizardReaderIds();
     const strip=document.createElement('div');strip.style.marginTop='12px';strip.className='wsetup';
-    (LAST_STATE.readers||[]).forEach(r=>{const b=document.createElement('button');b.className='btn sm';
-      b.textContent=r.id+' 세션 선택';b.onclick=()=>{selectTarget=r.id;renderCatalog();box.scrollIntoView({behavior:'smooth'});};strip.appendChild(b);});
+    if(ids.length===0){
+      strip.innerHTML='<span class="tag-note">설정에 리더가 없습니다 — [설정] 탭에서 리더를 추가하세요</span>';
+    }else{
+      strip.insertAdjacentHTML('beforeend','<span class="tag-note">지정할 리더:</span> ');
+      ids.forEach(id=>{const b=document.createElement('button');b.className='btn sm';
+        b.textContent=id+' 세션 선택';b.onclick=()=>{selectTarget=id;renderCatalog();box.scrollIntoView({behavior:'smooth'});};strip.appendChild(b);});
+    }
     box.appendChild(strip);
   }
 }
@@ -317,7 +324,9 @@ function startWizard(){
 }
 
 /* ── config ── */
-async function loadConfig(){const j=await api('api/config');if(j.ok){CFG=j.data;renderConfig();refreshWizardIfIdle();}}
+async function loadConfig(){const j=await api('api/config');if(j.ok){CFG=j.data;renderConfig();refreshWizardIfIdle();
+  // 세션 탭의 리더 선택 버튼은 config 기반이라, config 로드 후 카탈로그를 다시 그린다
+  if(CATALOG!==null)renderCatalog();}}
 function renderConfig(){
   const el=$('cfgView');if(!CFG){el.innerHTML='';return;}
   const c=CFG.config;
