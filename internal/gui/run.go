@@ -36,6 +36,7 @@ type guiApp struct {
 	core   *CoreController // hosting 전용, observer 는 nil
 	ring   *LogRing
 	trayCh chan TrayState
+	wiz    *Wizard
 
 	mu  sync.Mutex
 	cfg *config.Config // 디스크 설정의 현재 뷰 (쓰기 후 reload)
@@ -114,15 +115,32 @@ func Run(ctx context.Context, opts Options) error {
 		go tailLogs(runCtx, ga.dataDir, srv)
 	}
 
+	// 현장 점검 마법사
+	ga.wiz = NewWizard(wizardEnv{
+		cfgPath:     ga.cfgPath,
+		catalogPath: ga.catalogPath,
+		dataDir:     func() string { return ga.dataDir },
+		coreRunning: func() bool { return ga.mode == "hosting" && ga.core != nil && ga.core.Running() || ga.mode == "observer" && ga.observerCoreUp() },
+		readerConn:  ga.readerConnState,
+	}, func() {
+		b, _ := json.Marshal(ga.wiz.Snapshot())
+		srv.broadcast(sseMsg{event: "wizard", data: b})
+	})
+
 	srv.ServiceControl = serviceControl(opts.ConfigPath)
 	srv.Hooks = Hooks{
-		ApplySession: ga.applySession,
-		Resume:       ga.resume,
-		CoreControl:  ga.coreControl,
-		CatalogView:  ga.catalogView,
-		CatalogOp:    ga.catalogOp,
-		ConfigView:   ga.configView,
-		ConfigSave:   ga.configSave,
+		ApplySession:  ga.applySession,
+		Resume:        ga.resume,
+		CoreControl:   ga.coreControl,
+		CatalogView:   ga.catalogView,
+		CatalogOp:     ga.catalogOp,
+		ConfigView:    ga.configView,
+		ConfigSave:    ga.configSave,
+		WizardStart:   func(rid string, steps []string) *apiError { return ga.wiz.Start(rid, steps) },
+		WizardConfirm: func() { ga.wiz.ConfirmTag() },
+		WizardAbort:   func() { ga.wiz.Abort() },
+		WizardState:   func() any { return ga.wiz.Snapshot() },
+		WizardReport:  ga.saveWizardReport,
 	}
 
 	trayCh := make(chan TrayState, 4)
@@ -569,6 +587,53 @@ func (ga *guiApp) configSave(e ConfigEdit) (any, *apiError) {
 		msg = "설정을 저장했습니다 — 서비스를 재시작해야 적용됩니다"
 	}
 	return applyResult{NeedsServiceRestart: needRestart, Message: msg}, nil
+}
+
+// observerCoreUp 은 관측 모드에서 서비스(코어)가 최근 status 를 쓰고 있는지다.
+func (ga *guiApp) observerCoreUp() bool {
+	s, err := health.ReadStatus(filepath.Join(ga.dataDir, "status.json"))
+	if err != nil {
+		return false
+	}
+	if t, perr := time.Parse(time.RFC3339, s.UpdatedAt); perr == nil {
+		return time.Since(t) < 15*time.Second
+	}
+	return false
+}
+
+// readerConnState 는 status.json 에서 리더 연결 상태를 읽는다 (마법사 1단계 대체 판정).
+func (ga *guiApp) readerConnState(readerID string) string {
+	s, err := health.ReadStatus(filepath.Join(ga.dataDir, "status.json"))
+	if err != nil {
+		return ""
+	}
+	for _, r := range s.Readers {
+		if r.ID == readerID {
+			return r.ConnState
+		}
+	}
+	return ""
+}
+
+func (ga *guiApp) saveWizardReport() (any, *apiError) {
+	st := ga.wiz.Snapshot()
+	if st.Running {
+		return nil, &apiError{"conflict_busy", "점검이 아직 진행 중입니다"}
+	}
+	if len(st.Steps) == 0 {
+		return nil, &apiError{"not_found", "저장할 점검 결과가 없습니다"}
+	}
+	fp := ""
+	ga.mu.Lock()
+	if ga.cfg != nil {
+		fp = CfgFingerprint(ga.cfg)
+	}
+	ga.mu.Unlock()
+	path, err := SaveReport(ga.dataDir, ga.version, fp, st)
+	if err != nil {
+		return nil, &apiError{"internal", err.Error()}
+	}
+	return map[string]string{"path": path}, nil
 }
 
 func (ga *guiApp) catalogOp(op string) *apiError {

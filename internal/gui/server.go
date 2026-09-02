@@ -59,8 +59,13 @@ type Hooks struct {
 	CoreControl  func(action string) *apiError
 	CatalogView  func() any
 	CatalogOp    func(op string) *apiError
-	ConfigView   func() any
-	ConfigSave   func(e ConfigEdit) (any, *apiError)
+	ConfigView    func() any
+	ConfigSave    func(e ConfigEdit) (any, *apiError)
+	WizardStart   func(readerID string, steps []string) *apiError
+	WizardConfirm func()
+	WizardAbort   func()
+	WizardState   func() any
+	WizardReport  func() (any, *apiError)
 }
 
 func NewServer(meta Meta) (*Server, error) {
@@ -167,6 +172,48 @@ func (s *Server) Serve() error {
 			return
 		}
 		res, e := s.Hooks.ConfigSave(body.Config)
+		if e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, res)
+	}))
+	mux.HandleFunc("GET "+prefix+"/api/wizard", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		writeOK(w, s.Hooks.WizardState())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/wizard/start", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ReaderID string   `json:"readerId"`
+			Steps    []string `json:"steps"`
+			Confirm  bool     `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		if len(body.Steps) == 0 {
+			writeErr(w, 400, "invalid_request", "점검 단계를 선택하세요")
+			return
+		}
+		if e := s.Hooks.WizardStart(body.ReaderID, body.Steps); e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, s.Hooks.WizardState())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/wizard/confirm", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		if !s.confirmed(w, r) {
+			return
+		}
+		s.Hooks.WizardConfirm()
+		writeOK(w, s.Hooks.WizardState())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/wizard/abort", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		s.Hooks.WizardAbort()
+		writeOK(w, map[string]bool{"aborted": true})
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/wizard/report", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		res, e := s.Hooks.WizardReport()
 		if e != nil {
 			writeErr(w, 400, e.Code, e.Message)
 			return

@@ -275,6 +275,74 @@ async function importCatalog() {
   else modal('가져오기 실패', j.error?.message || '', [['닫기', 'primary', null]]);
 }
 
+// ─── 현장 점검 마법사 ───
+let WIZ = null;
+const STEP_DEFS = [
+  ['0', '설정·환경'], ['1', '리더 연결'], ['2', '서버 확인'],
+  ['3a', '실태그 체크인'], ['3b', '무해 전송 시험'], ['4', '오프라인 복구'],
+];
+async function loadWizard() {
+  const j = await api('api/wizard');
+  if (j.ok) { WIZ = j.data; renderWizard(); }
+}
+function renderWizard() {
+  const el = $('wizard');
+  const w = WIZ || {};
+  if (!w.running && (!w.steps || w.steps.length === 0)) {
+    // 시작 화면
+    const ropts = (LAST_STATE?.readers || []).map(r => '<option value="' + esc(r.id) + '">' + esc(r.id) + '</option>').join('');
+    const chks = STEP_DEFS.map(([id, t]) =>
+      '<label style="margin-right:10px"><input type="checkbox" class="wchk" value="' + id + '"' +
+      (id !== '4' ? ' checked' : '') + '> ' + t + '</label>').join('');
+    el.innerHTML = '<div class="wsetup">리더 <select id="wReader">' + ropts + '</select>' +
+      '<button class="primary" id="wStart">점검 시작</button></div>' +
+      '<div style="font-size:13px">' + chks + '</div>' +
+      '<div class="wd" style="margin-top:6px;color:var(--sub)">실태그 체크인(3a)은 실제 서버에 기록을 만듭니다 — 시험용 태그를 사용하세요.</div>';
+    $('wStart').onclick = startWizard;
+    return;
+  }
+  // 진행/결과
+  let html = '';
+  (w.steps || []).forEach(s => {
+    const icon = {pass:'✅',fail:'❌',warn:'⚠️',running:'⏳',skip:'⏭️',pending:'·'}[s.status] || '·';
+    const metrics = s.metrics ? Object.entries(s.metrics).map(([k,v]) => k+': '+v).join(' · ') : '';
+    html += '<div class="wstep ' + esc(s.status) + '"><div class="wicon">' + icon + '</div><div class="wbody">' +
+      '<div class="wt">' + esc(s.title) + '</div>' +
+      (s.detail ? '<div class="wd">' + esc(s.detail) + '</div>' : '') +
+      (s.action ? '<div class="wd">👉 ' + esc(s.action) + '</div>' : '') +
+      (metrics ? '<div class="wm">' + esc(metrics) + '</div>' : '') +
+      '</div></div>';
+  });
+  el.innerHTML = html + '<div class="wsetup" style="margin-top:8px">' +
+    (w.running
+      ? (w.awaitTag
+          ? '<b>시험용 태그를 리더에 대고</b> <button class="primary" id="wConfirm">스캔 시작</button> <button id="wAbort">중단</button>'
+          : '<span class="badge">점검 진행 중…</span> <button id="wAbort">중단</button>')
+      : '<button class="primary" id="wReport">리포트 저장</button> <button id="wRestart">다시 점검</button> <span id="wMsg" class="badge" style="display:none"></span>') +
+    '</div>';
+  if (w.awaitTag) $('wConfirm').onclick = async () => {
+    modal('실태그 체크인', '실제 서버에 체크인 기록이 생성됩니다.\n반드시 시험용 태그를 사용하세요. 진행할까요?', [
+      ['취소', '', () => api('api/wizard/abort', {})],
+      ['진행', 'primary', () => api('api/wizard/confirm', {confirm: true})],
+    ]);
+  };
+  const ab = $('wAbort'); if (ab) ab.onclick = () => api('api/wizard/abort', {});
+  const rp = $('wReport'); if (rp) rp.onclick = async () => {
+    const j = await api('api/wizard/report', {});
+    const m = $('wMsg'); m.style.display = 'inline';
+    m.textContent = j.ok ? '저장됨: ' + j.data.path : (j.error?.message || '실패');
+  };
+  const rs = $('wRestart'); if (rs) rs.onclick = () => { WIZ = {steps: []}; renderWizard(); };
+}
+function startWizard() {
+  const steps = [...document.querySelectorAll('.wchk:checked')].map(c => c.value);
+  const readerId = $('wReader').value;
+  if (steps.length === 0) return;
+  api('api/wizard/start', {readerId, steps, confirm: true}).then(j => {
+    if (!j.ok) modal('시작 실패', j.error?.message || '', [['닫기', 'primary', null]]);
+  });
+}
+
 // ─── 설정 ───
 let CFG = null, cfgEditing = false;
 async function loadConfig() {
@@ -405,6 +473,7 @@ fetch('api/meta').then(r => r.json()).then(({data}) => {
   renderCtrl(LAST_STATE);
   loadCatalog();
   loadConfig();
+  loadWizard();
 });
 
 function connectSSE() {
@@ -412,6 +481,7 @@ function connectSSE() {
   es.addEventListener('state', e => renderState(JSON.parse(e.data)));
   es.addEventListener('log', e => appendLog(e.data));
   es.addEventListener('catalog', () => loadCatalog());
+  es.addEventListener('wizard', e => { WIZ = JSON.parse(e.data); renderWizard(); });
   es.onerror = () => { es.close(); setTimeout(connectSSE, 2000); };
 }
 fetch('api/state').then(r => r.json()).then(({data}) => renderState(data)).catch(() => {});

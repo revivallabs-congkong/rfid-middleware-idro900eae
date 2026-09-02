@@ -57,6 +57,14 @@ select,input[type=text],input[type=number]{font:inherit;padding:4px 8px;border:1
 #cfgView input{width:100%}
 .rdrRow{display:flex;gap:6px;margin:4px 0;align-items:center}
 .rdrRow input{flex:1}
+#wizard .wsetup{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.wstep{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;margin:4px 0;background:var(--card)}
+.wstep .wicon{width:20px;flex:none;font-weight:700;text-align:center}
+.wstep .wbody{flex:1}.wstep .wt{font-weight:600}
+.wstep .wd{font-size:12.5px;color:var(--sub)}
+.wstep .wm{font-size:12px;color:var(--sub);margin-top:2px}
+.wstep.pass{border-color:#bbf7d0}.wstep.fail{border-color:#fecaca}.wstep.warn{border-color:#fde68a}
+.wstep.running{border-color:var(--blue)}
 #logs{background:#101014;color:#d6d6dd;border-radius:10px;padding:10px;height:320px;overflow-y:auto;
 font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:break-all}
 .lw{color:#facc15}.le{color:#f87171}.ld{color:#6b7280}
@@ -90,6 +98,9 @@ font:12px/1.55 Consolas,'D2Coding',monospace;white-space:pre-wrap;word-break:bre
   <div id="catBanners"></div>
   <div id="catbar"></div>
   <div id="sessions"></div>
+
+  <h2>현장 점검</h2>
+  <div id="wizard"></div>
 
   <h2>설정 <button id="cfgEdit" style="font-size:12px">편집</button></h2>
   <div id="cfgView"></div>

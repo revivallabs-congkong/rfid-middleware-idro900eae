@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -65,6 +66,40 @@ const (
 	keepFiles  = 10
 	keepDays   = 14
 )
+
+// token64 은 64자리 hex(펄스 토큰 형태)다.
+var token64 = regexp.MustCompile(`\b[0-9a-fA-F]{64}\b`)
+
+// Redact 는 임의 필드맵에서 금칙 키를 제거하고 값에 섞인 토큰(64hex)을
+// fingerprint 로, EPC 로 보이는 hex 를 끝 4자 마스킹한다 (GUI 설계 §6.7).
+// 마법사 리포트·GUI 송출처럼 로그 파이프라인 밖으로 나가는 데이터에 쓴다.
+func Redact(fields F) F {
+	out := make(F, len(fields))
+	for k, v := range fields {
+		if forbiddenKeys[k] {
+			continue
+		}
+		if s, ok := v.(string); ok {
+			out[k] = redactString(k, s)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// RedactString 은 자유 텍스트에서 토큰(64hex)을 fingerprint 로 마스킹한다.
+func RedactString(s string) string { return redactString("", s) }
+
+func redactString(key, s string) string {
+	// 64hex 토큰 → 앞 8자
+	s = token64.ReplaceAllStringFunc(s, func(m string) string { return m[:8] + "…" })
+	// epc 필드는 끝 4자 마스킹
+	if key == "epc" && len(s) >= 8 {
+		return s[:len(s)-4] + "****"
+	}
+	return s
+}
 
 // Logger 는 파일 회전 + 선택적 콘솔 echo 로거다.
 type Logger struct {
