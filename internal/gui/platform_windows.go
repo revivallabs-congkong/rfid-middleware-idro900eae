@@ -159,6 +159,20 @@ func serviceControl(configPath string) func(action string) error {
 	}
 }
 
+// networkSetup 은 자기 exe 를 관리자 권한으로 재실행해 어댑터에 고정 IP 를
+// 부여한다 (netsh 는 관리자 필요 — serviceControl 과 같은 재실행 패턴).
+func networkSetup(iface, ip, mask string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	args := fmt.Sprintf(`net setup --iface "%s" --ip %s --mask %s`, iface, ip, mask)
+	exePtr, _ := windows.UTF16PtrFromString(exe)
+	argPtr, _ := windows.UTF16PtrFromString(args)
+	verb, _ := windows.UTF16PtrFromString("runas")
+	return windows.ShellExecute(0, verb, exePtr, argPtr, nil, windows.SW_HIDE)
+}
+
 // autoStartInfo 는 무인 모드 상태를 GUI 로 돌려준다 (비관리자 조회).
 func autoStartInfo() (installed, auto, running bool) {
 	i := winsvc.QueryAutoStart()

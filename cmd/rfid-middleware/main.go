@@ -19,6 +19,7 @@ import (
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/config"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/gui"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/health"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/winnet"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/winsvc"
 )
 
@@ -68,6 +69,8 @@ func run(args []string) error {
 		return cmdQueue(args[1:])
 	case "service":
 		return cmdService(args[1:])
+	case "net":
+		return cmdNet(args[1:])
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -78,6 +81,29 @@ func run(args []string) error {
 		fmt.Print(usage)
 		return fmt.Errorf("알 수 없는 명령: %s", args[0])
 	}
+}
+
+// cmdNet 은 호스트 네트워크 설정이다 (GUI 가 관리자 권한으로 재실행).
+//   net setup --iface "<name>" --ip <ip> --mask <mask>
+func cmdNet(args []string) error {
+	if len(args) < 1 || args[0] != "setup" {
+		return fmt.Errorf("사용법: rfid-middleware net setup --iface <name> --ip <ip> --mask <mask>")
+	}
+	fs := flag.NewFlagSet("net setup", flag.ContinueOnError)
+	iface := fs.String("iface", "", "어댑터 이름")
+	ip := fs.String("ip", "", "고정 IPv4")
+	mask := fs.String("mask", "255.255.255.0", "서브넷 마스크")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *iface == "" || *ip == "" {
+		return fmt.Errorf("--iface 와 --ip 가 필요합니다")
+	}
+	if err := winnet.SetStatic(*iface, *ip, *mask); err != nil {
+		return err
+	}
+	fmt.Printf("어댑터 %q 에 고정 IP %s/%s 설정 완료\n", *iface, *ip, *mask)
+	return nil
 }
 
 func loadConfig(path string) (*config.Config, error) {

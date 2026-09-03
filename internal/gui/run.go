@@ -15,6 +15,7 @@ import (
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/app"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/config"
 	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/health"
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/winnet"
 )
 
 type Options struct {
@@ -152,6 +153,8 @@ func Run(ctx context.Context, opts Options) error {
 		WizardAbort:   func() { ga.wiz.Abort() },
 		WizardState:   func() any { return ga.wiz.Snapshot() },
 		WizardReport:  ga.saveWizardReport,
+		NetworkView:   ga.networkView,
+		NetworkSetup:  ga.networkApply,
 	}
 
 	trayCh := make(chan TrayState, 4)
@@ -458,6 +461,54 @@ func (ga *guiApp) resume(readerID, pending, sessionID string) (any, *apiError) {
 	}
 	ga.reloadCfg()
 	return applyResult{Message: "재개했습니다 — 서버 확인 중"}, nil
+}
+
+// readerAddr 은 네트워크 진단 기준이 되는 첫 리더의 주소다 (host:port).
+func (ga *guiApp) readerAddr() string {
+	ga.mu.Lock()
+	cfg := ga.cfg
+	ga.mu.Unlock()
+	if cfg == nil || len(cfg.Readers) == 0 {
+		return ""
+	}
+	return cfg.Readers[0].Addr
+}
+
+// networkView 는 호스트가 리더 대역에 IP 를 가졌는지 자가 진단한다
+// (장비 명세 2.2 — 리더는 DHCP 서버가 아님). 관리자 권한 불필요.
+func (ga *guiApp) networkView() any {
+	addr := ga.readerAddr()
+	prefix := winnet.Subnet24(addr)
+	host := addr
+	if i := strings.LastIndex(addr, ":"); i > 0 {
+		host = addr[:i]
+	}
+	return map[string]any{
+		"readerAddr": addr,
+		"readerHost": host,
+		"subnet":     prefix,
+		"subnetOK":   winnet.HasHostInSubnet(prefix),
+		"hostIP":     winnet.SubnetIP(prefix),
+		"assignIP":   winnet.HostIPFor(addr),
+		"candidates": winnet.Candidates(prefix),
+		"ifaces":     winnet.List(),
+	}
+}
+
+// networkApply 는 선택한 어댑터에 리더 대역 고정 IP 를 부여한다 (관리자 재실행+UAC).
+func (ga *guiApp) networkApply(iface string) *apiError {
+	if iface == "" {
+		return &apiError{"invalid_request", "어댑터를 선택하세요"}
+	}
+	addr := ga.readerAddr()
+	ip := winnet.HostIPFor(addr)
+	if ip == "" {
+		return &apiError{"invalid_request", "리더 주소가 IPv4 가 아니어서 자동 설정할 수 없습니다"}
+	}
+	if err := networkSetup(iface, ip, "255.255.255.0"); err != nil {
+		return &apiError{"uac_denied", "네트워크 설정 실패: " + err.Error()}
+	}
+	return nil
 }
 
 // zeroToken 은 config.example 의 placeholder(전부 0)다 — 세션 미지정 상태.

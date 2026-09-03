@@ -68,6 +68,8 @@ type Hooks struct {
 	WizardAbort   func()
 	WizardState   func() any
 	WizardReport  func() (any, *apiError)
+	NetworkView   func() any
+	NetworkSetup  func(iface string) *apiError
 }
 
 func NewServer(meta Meta) (*Server, error) {
@@ -107,6 +109,36 @@ func (s *Server) Serve() error {
 	}))
 	mux.HandleFunc(prefix+"/api/events", s.guard(s.handleEvents))
 	mux.HandleFunc(prefix+"/api/control/service", s.guard(s.handleServiceControl))
+	mux.HandleFunc(prefix+"/api/network", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		if s.Hooks.NetworkView == nil {
+			writeErr(w, 400, "invalid_request", "미지원")
+			return
+		}
+		writeOK(w, s.Hooks.NetworkView())
+	}))
+	mux.HandleFunc("POST "+prefix+"/api/control/network", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Iface   string `json:"iface"`
+			Confirm bool   `json:"confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, "invalid_request", "본문 파싱 실패")
+			return
+		}
+		if !body.Confirm {
+			writeErr(w, 400, "confirm_required", "확인이 필요합니다")
+			return
+		}
+		if s.Hooks.NetworkSetup == nil {
+			writeErr(w, 400, "invalid_request", "미지원")
+			return
+		}
+		if e := s.Hooks.NetworkSetup(body.Iface); e != nil {
+			writeErr(w, 400, e.Code, e.Message)
+			return
+		}
+		writeOK(w, map[string]string{"iface": body.Iface})
+	}))
 	mux.HandleFunc("GET "+prefix+"/api/catalog", s.guard(func(w http.ResponseWriter, r *http.Request) {
 		if s.Hooks.CatalogView == nil {
 			writeErr(w, 400, "catalog_error", "미지원")

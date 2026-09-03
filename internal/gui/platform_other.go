@@ -53,5 +53,10 @@ func serviceControl(configPath string) func(action string) error {
 // autoStartInfo — 비 Windows 는 서비스 없음.
 func autoStartInfo() (installed, auto, running bool) { return false, false, false }
 
+// networkSetup — 비 Windows 는 미지원.
+func networkSetup(iface, ip, mask string) error {
+	return fmt.Errorf("windows 전용 기능입니다")
+}
+
 // AttachConsole 은 Windows 전용 — no-op.
 func AttachConsole() {}

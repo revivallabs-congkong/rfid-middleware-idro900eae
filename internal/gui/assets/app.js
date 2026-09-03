@@ -33,7 +33,7 @@ function setMode(m){
   try{localStorage.setItem('ck_mode',m);}catch{}
 }
 $('modeMonitor').onclick=()=>setMode('monitor');
-$('modeSetup').onclick=()=>{setMode('setup');loadCatalog();loadConfig();loadWizard();loadUnattended();};
+$('modeSetup').onclick=()=>{setMode('setup');loadCatalog();loadConfig();loadWizard();loadUnattended();loadNetwork();};
 document.querySelectorAll('.tabs button').forEach(b=>{
   b.onclick=()=>{
     const name=b.dataset.tab;
@@ -205,6 +205,49 @@ async function loadUnattended(){
         const j=await api('api/control/service',{action:next?'auto-on':'auto-off',confirm:true});
         toast(j.ok?'설정됨 — 다음 부팅부터 적용됩니다':(j.error?.message||'실패'));
         setTimeout(loadUnattended,1500);
+      }]]);
+  };
+}
+async function loadNetwork(){
+  const el=$('network');if(!el)return;
+  let d={};try{d=(await api('api/network')).data||{};}catch{el.innerHTML='';return;}
+  if(!d.readerAddr){el.innerHTML='<div class="hint">리더가 설정되지 않았습니다.</div>';return;}
+  if(d.subnetOK){
+    el.innerHTML='<div class="card-plain"><div style="display:flex;align-items:center;gap:10px">'+
+      '<span class="conn up"><span class="d"></span>정상</span>'+
+      '<div><div style="font-weight:600">리더 대역에 연결할 IP가 있습니다</div>'+
+      '<div class="hint" style="margin:2px 0 0">리더 '+esc(d.readerHost)+' · 호스트 IP '+esc(d.hostIP||'')+'</div></div></div></div>';
+    return;
+  }
+  const cands=d.candidates||[];
+  let inner='<div class="card-plain">'+
+    '<div style="display:flex;align-items:center;gap:10px">'+
+    '<span class="conn down"><span class="d"></span>미설정</span>'+
+    '<div><div style="font-weight:600">리더('+esc(d.readerHost)+')에 닿을 IP가 없습니다</div>'+
+    '<div class="hint" style="margin:2px 0 0">이 노트북 유선 어댑터에 리더와 같은 대역의 고정 IP를 설정해야 합니다.</div></div></div>';
+  if(cands.length){
+    inner+='<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    if(cands.length>1){
+      inner+='<select id="netIface">'+cands.map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('')+'</select>';
+    }else{
+      inner+='<span class="hint">어댑터: <b>'+esc(cands[0])+'</b></span>';
+    }
+    inner+='<button class="btn primary" id="netApply">네트워크 자동 설정</button></div>'+
+      '<div class="hint" style="margin-top:8px">설정할 IP: <b>'+esc(d.assignIP)+'</b> / 255.255.255.0 · 관리자 확인(UAC)이 뜹니다</div>';
+  }else{
+    inner+='<div class="hint" style="margin-top:12px">설정 가능한 유선 어댑터를 찾지 못했습니다 — 리더 랜선 연결을 확인하세요. (Wi-Fi 등 인터넷 어댑터는 건드리지 않습니다.)</div>';
+  }
+  inner+='</div>';
+  el.innerHTML=inner;
+  const btn=$('netApply');
+  if(btn)btn.onclick=()=>{
+    const iface=cands.length>1?$('netIface').value:cands[0];
+    modal('네트워크 자동 설정',
+      '어댑터 "'+iface+'"에 고정 IP '+d.assignIP+' / 255.255.255.0 을 설정합니다.\n리더 전용 세그먼트이며 인터넷 어댑터(Wi-Fi 등)는 건드리지 않습니다.\n관리자 확인(UAC)이 뜹니다.',[
+      ['취소','',null],['진행','primary',async()=>{
+        const j=await api('api/control/network',{iface,confirm:true});
+        toast(j.ok?'설정 요청됨 — 잠시 후 리더에 연결됩니다':(j.error?.message||'실패'));
+        setTimeout(loadNetwork,2000);
       }]]);
   };
 }
@@ -434,7 +477,7 @@ fetch('api/meta').then(r=>r.json()).then(({data})=>{
     const h=$('headline');if(h){h.textContent='⚠ '+data.dataDirError;}
     modal('데이터 폴더 오류',data.dataDirError+'\n\n관리자 권한으로 다시 설치하거나, 데이터 폴더('+(data.dataDir||'')+')의 쓰기 권한을 확인하세요.',[['닫기','primary',null]]);
   }
-  renderCtrl(LAST_STATE);loadCatalog();loadConfig();loadWizard();loadUnattended();
+  renderCtrl(LAST_STATE);loadCatalog();loadConfig();loadWizard();loadUnattended();loadNetwork();
 });
 function connectSSE(){
   const es=new EventSource('api/events');
