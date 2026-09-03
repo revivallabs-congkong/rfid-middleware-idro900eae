@@ -187,8 +187,8 @@ func TestAcceptanceB3OfflineRestartRecovery(t *testing.T) {
 			ReplayNDJSON: true, ReplayReader: "gate-a", DrainAndExit: false,
 		})
 	}()
-	// 5건이 큐에 영속화될 때까지 대기
-	waitFor(t, 15*time.Second, func() bool {
+	// 5건이 큐에 영속화될 때까지 대기 (-race 계측 시 CI 러너가 느려 여유를 크게 둔다)
+	waitFor(t, 40*time.Second, func() bool {
 		return queueDepth(t, dataDir) == 5
 	}, "5건 적재")
 	cancel1()
@@ -215,7 +215,7 @@ func TestAcceptanceB3OfflineRestartRecovery(t *testing.T) {
 			ReplayReader: "gate-a", DrainAndExit: false,
 		})
 	}()
-	waitFor(t, 20*time.Second, func() bool { return api.count() >= 5 }, "5건 재생")
+	waitFor(t, 40*time.Second, func() bool { return api.count() >= 5 }, "5건 재생")
 	cancel2()
 	if err := <-done2; err != nil {
 		t.Fatal(err)
