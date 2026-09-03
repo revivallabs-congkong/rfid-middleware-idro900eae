@@ -199,11 +199,11 @@ async function loadUnattended(){
   $('autoSw').onclick=()=>{
     const next=!on;
     modal('무인 운영 '+(next?'켜기':'끄기'),
-      next?'노트북을 켜면 자동으로 수집을 시작하도록 설정합니다.\n관리자 확인(UAC)이 뜹니다.'
-          :'자동 시작을 끄고 수동으로 되돌립니다.\n관리자 확인(UAC)이 뜹니다.',[
+      next?'다음 부팅부터 노트북을 켜면 사람 없이 자동으로 수집을 시작합니다.\n지금 수집 중인 상태는 그대로 유지됩니다.\n관리자 확인(UAC)이 뜹니다.'
+          :'다음 부팅부터 자동 시작을 끄고 수동으로 되돌립니다.\n지금 수집 중인 상태는 그대로 유지됩니다.\n관리자 확인(UAC)이 뜹니다.',[
       ['취소','',null],['진행','primary',async()=>{
         const j=await api('api/control/service',{action:next?'auto-on':'auto-off',confirm:true});
-        toast(j.ok?'요청됨 — 잠시 후 반영됩니다':(j.error?.message||'실패'));
+        toast(j.ok?'설정됨 — 다음 부팅부터 적용됩니다':(j.error?.message||'실패'));
         setTimeout(loadUnattended,1500);
       }]]);
   };

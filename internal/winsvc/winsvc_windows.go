@@ -174,18 +174,17 @@ func Stop() error {
 }
 
 // SetAutoStart 는 무인 운영(부팅 시 자동 시작)을 켜거나 끈다 (관리자 권한).
-// on: 서비스 없으면 설치 → Automatic(Delayed) + 지금 시작.
-// off: Manual 로 되돌리고 중지. 서비스가 없으면 무시.
+// 이 토글은 "다음 부팅 자동 시작 여부"만 바꾼다 — 현재 실행 중인 수집은
+// 건드리지 않는다. 지금 이 세션은 사람이 콘솔(호스팅)에서 제어하고 있으므로
+// 여기서 서비스를 바로 시작/중지하면 수집기가 둘이 되어 잠금 충돌이 난다.
+// on: 서비스 없으면 설치 → Automatic(Delayed) 로만 설정 (지금 시작하지 않음).
+// off: Manual 로 되돌리기만 함 (지금 중지하지 않음).
 func SetAutoStart(configPath string, on bool) error {
 	if !on {
-		// 자동 시작 끄기 = Manual 로 등록/교정 + 중지
-		if err := Install(configPath); err != nil {
-			return err
-		}
-		_ = Stop()
-		return nil
+		// 자동 시작 끄기 = Manual 로 등록/교정 (실행 중이면 그대로 둔다)
+		return Install(configPath)
 	}
-	// 자동 시작 켜기
+	// 자동 시작 켜기 = Automatic 으로 등록/교정 (다음 부팅부터 무인 시작)
 	if err := Install(configPath); err != nil {
 		return err
 	}
@@ -205,11 +204,7 @@ func SetAutoStart(configPath string, on bool) error {
 	}
 	cfg.StartType = mgr.StartAutomatic
 	cfg.DelayedAutoStart = true
-	if err := s.UpdateConfig(cfg); err != nil {
-		return err
-	}
-	_ = s.Start() // 지금 바로 시작 (이미 실행 중이면 무시)
-	return nil
+	return s.UpdateConfig(cfg)
 }
 
 // AutoStartInfo 는 GUI 표시용 서비스 상태다 (비관리자 조회 가능).
