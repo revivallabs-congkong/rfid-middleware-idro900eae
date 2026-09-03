@@ -78,6 +78,48 @@ Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service uninstall --config ""{#ConfigPath}"""; Flags: runhidden; RunOnceId: "SvcUninstall"
 
 [Code]
+const
+  ZeroToken = '0000000000000000000000000000000000000000000000000000000000000000';
+
+var
+  ReaderPage: TInputQueryWizardPage;
+
+// 리더 연결 정보 입력 페이지 — 행사장마다 리더 주소가 다르므로 설치 시 받는다.
+// (config 가 이미 있으면 보존하므로, 이 값은 최초 설치에서만 쓰인다.)
+procedure InitializeWizard;
+begin
+  ReaderPage := CreateInputQueryPage(wpSelectTasks,
+    'RFID 리더 설정',
+    '리더 연결 정보를 입력하세요.',
+    '행사장 리더의 주소를 입력합니다. 나중에 콘솔의 [점검·설정 › 설정]에서 바꿀 수 있습니다.');
+  ReaderPage.Add('리더 ID (라벨, 예: gate-a)', False);
+  ReaderPage.Add('리더 주소 IP:포트 (예: 192.168.9.6:5578)', False);
+  ReaderPage.Values[0] := 'gate-a';
+  ReaderPage.Values[1] := '192.168.9.6:5578';
+end;
+
+// 리더 주소 형식 최소 검증 (host:port).
+function NextButtonClick(CurPageID: Integer): Boolean;
+var addr: string; p: Integer;
+begin
+  Result := True;
+  if (ReaderPage <> nil) and (CurPageID = ReaderPage.ID) then
+  begin
+    if Trim(ReaderPage.Values[0]) = '' then
+    begin
+      MsgBox('리더 ID 를 입력하세요.', mbError, MB_OK);
+      Result := False; exit;
+    end;
+    addr := Trim(ReaderPage.Values[1]);
+    p := Pos(':', addr);
+    if (addr = '') or (p <= 1) or (p = Length(addr)) then
+    begin
+      MsgBox('리더 주소를 IP:포트 형식으로 입력하세요 (예: 192.168.9.6:5578).', mbError, MB_OK);
+      Result := False; exit;
+    end;
+  end;
+end;
+
 // 파일 복사 전에 실행 중인 서비스를 멈춘다. 서비스가 {app}\rfid-middleware.exe 를
 // 잠그고 있으면 새 exe 로 교체할 수 없고 [Run] 의 'service reset' 도 옛 exe 를
 // 실행하게 된다. sc.exe 로 정지 + 수동 시작으로 되돌려 부팅 자동 수집을 없앤다.
@@ -92,16 +134,36 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
-var dataDir, cfg, ex: string;
+var dataDir, ddJson, cfg, rid, raddr, content: string;
 begin
   if CurStep = ssPostInstall then
   begin
     dataDir := ExpandConstant('{#DataDir}');
     ForceDirectories(dataDir);
     cfg := ExpandConstant('{#ConfigPath}');
-    ex := ExpandConstant('{app}\config.example.json');
-    // 기존 config 는 보존, 없을 때만 예제를 복사한다 (재설치 안전).
-    if (not FileExists(cfg)) and FileExists(ex) then
-      FileCopy(ex, cfg, False);
+    // 기존 config 는 보존한다 (세션 토큰·설정 유지, 재설치 안전).
+    if not FileExists(cfg) then
+    begin
+      rid := Trim(ReaderPage.Values[0]);
+      raddr := Trim(ReaderPage.Values[1]);
+      ddJson := dataDir;
+      StringChangeEx(ddJson, '\', '\\', True); // JSON escape
+      content :=
+        '{' + #13#10 +
+        '  "version": 1,' + #13#10 +
+        '  "apiHost": "https://api.congkong.net",' + #13#10 +
+        '  "dataDir": "' + ddJson + '",' + #13#10 +
+        '  "debounceSec": 60,' + #13#10 +
+        '  "queueMaxAgeHours": 24,' + #13#10 +
+        '  "requestTimeoutSec": 10,' + #13#10 +
+        '  "powerGain": 300,' + #13#10 +
+        '  "buzzer": 0,' + #13#10 +
+        '  "logLevel": "info",' + #13#10 +
+        '  "readers": [' + #13#10 +
+        '    { "id": "' + rid + '", "addr": "' + raddr + '", "pulseToken": "' + ZeroToken + '" }' + #13#10 +
+        '  ]' + #13#10 +
+        '}' + #13#10;
+      SaveStringToFile(cfg, content, False);
+    end;
   end;
 end;
