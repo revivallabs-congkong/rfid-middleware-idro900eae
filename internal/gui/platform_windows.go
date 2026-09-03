@@ -13,6 +13,8 @@ import (
 
 	"fyne.io/systray"
 	"golang.org/x/sys/windows"
+
+	"github.com/revivallabs-congkong/rfid-middleware-idro900eae/internal/winsvc"
 )
 
 //go:embed assets/icon.ico
@@ -139,12 +141,28 @@ func serviceControl(configPath string) func(action string) error {
 		if err != nil {
 			return err
 		}
-		args := fmt.Sprintf(`service %s --config "%s"`, action, configPath)
+		// action → service 서브커맨드. auto-on/auto-off 는 무인 자동 시작 토글.
+		var sub string
+		switch action {
+		case "auto-on":
+			sub = "auto on"
+		case "auto-off":
+			sub = "auto off"
+		default:
+			sub = action // start | stop
+		}
+		args := fmt.Sprintf(`service %s --config "%s"`, sub, configPath)
 		exePtr, _ := windows.UTF16PtrFromString(exe)
 		argPtr, _ := windows.UTF16PtrFromString(args)
 		verb, _ := windows.UTF16PtrFromString("runas")
 		return windows.ShellExecute(0, verb, exePtr, argPtr, nil, windows.SW_HIDE)
 	}
+}
+
+// autoStartInfo 는 무인 모드 상태를 GUI 로 돌려준다 (비관리자 조회).
+func autoStartInfo() (installed, auto, running bool) {
+	i := winsvc.QueryAutoStart()
+	return i.Installed, i.AutoStart, i.Running
 }
 
 // AttachConsole 은 부모 콘솔에 붙고 UTF-8 로 전환한다 (M0 확인 사항 —

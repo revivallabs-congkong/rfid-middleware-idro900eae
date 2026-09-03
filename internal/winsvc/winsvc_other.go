@@ -21,3 +21,12 @@ func Install(configPath string) error { return errWindowsOnly }
 func Uninstall() error                { return errWindowsOnly }
 func Start() error                    { return errWindowsOnly }
 func Stop() error                     { return errWindowsOnly }
+
+type AutoStartInfo struct {
+	Installed bool
+	AutoStart bool
+	Running   bool
+}
+
+func SetAutoStart(configPath string, on bool) error { return errWindowsOnly }
+func QueryAutoStart() AutoStartInfo                 { return AutoStartInfo{} }

@@ -101,6 +101,10 @@ func (s *Server) Serve() error {
 	}))
 	mux.HandleFunc(prefix+"/api/state", s.guard(s.handleState))
 	mux.HandleFunc(prefix+"/api/meta", s.guard(s.handleMeta))
+	mux.HandleFunc(prefix+"/api/system", s.guard(func(w http.ResponseWriter, r *http.Request) {
+		installed, auto, running := autoStartInfo()
+		writeOK(w, map[string]any{"serviceInstalled": installed, "autoStart": auto, "serviceRunning": running, "mode": s.meta.Mode})
+	}))
 	mux.HandleFunc(prefix+"/api/events", s.guard(s.handleEvents))
 	mux.HandleFunc(prefix+"/api/control/service", s.guard(s.handleServiceControl))
 	mux.HandleFunc("GET "+prefix+"/api/catalog", s.guard(func(w http.ResponseWriter, r *http.Request) {
@@ -338,8 +342,10 @@ func (s *Server) handleServiceControl(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "confirm_required", "확인이 필요합니다")
 		return
 	}
-	if body.Action != "start" && body.Action != "stop" {
-		writeErr(w, 400, "invalid_request", "action 은 start|stop")
+	switch body.Action {
+	case "start", "stop", "auto-on", "auto-off":
+	default:
+		writeErr(w, 400, "invalid_request", "action 은 start|stop|auto-on|auto-off")
 		return
 	}
 	if s.ServiceControl == nil {

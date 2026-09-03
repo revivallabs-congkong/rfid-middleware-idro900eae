@@ -33,7 +33,7 @@ function setMode(m){
   try{localStorage.setItem('ck_mode',m);}catch{}
 }
 $('modeMonitor').onclick=()=>setMode('monitor');
-$('modeSetup').onclick=()=>{setMode('setup');loadCatalog();loadConfig();loadWizard();};
+$('modeSetup').onclick=()=>{setMode('setup');loadCatalog();loadConfig();loadWizard();loadUnattended();};
 document.querySelectorAll('.tabs button').forEach(b=>{
   b.onclick=()=>{
     const name=b.dataset.tab;
@@ -180,6 +180,34 @@ function renderCtrl(st){
     const s=document.createElement('span');s.className='tag-note';s.textContent='관리자 확인(UAC)이 뜰 수 있습니다';c.appendChild(s);
   }
 }
+// 무인 운영(부팅 시 자동 시작 서비스) 설정 — 설정 탭
+async function loadUnattended(){
+  const el=$('unattended');if(!el)return;
+  let d={};try{d=(await api('api/system')).data||{};}catch{}
+  if(META.mode!=='hosting'&&META.mode!=='observer'){el.innerHTML='';return;}
+  const on=!!d.autoStart;
+  el.innerHTML='<div class="card-plain">'+
+    '<div style="display:flex;align-items:center;gap:12px">'+
+    '<button class="sw'+(on?' on':'')+'" id="autoSw" role="switch" aria-checked="'+on+'" aria-label="무인 자동 시작"><span class="knob"></span></button>'+
+    '<div><div style="font-weight:600">부팅 시 자동 시작(무인 운영)</div>'+
+    '<div class="hint" style="margin:2px 0 0">'+(on
+      ?'켜짐 — 노트북을 켜면 사람 없이도 자동으로 수집을 시작합니다.'
+      :'꺼짐 — 최초 실행은 사람이 콘솔에서 수집을 켭니다(권장).')+'</div></div></div>'+
+    '<div class="hint" style="margin-top:8px">'+
+    (d.serviceInstalled?'서비스 등록됨':'서비스 미등록')+
+    (d.serviceRunning?' · 실행 중':'')+' · 변경 시 관리자 확인(UAC)이 뜹니다</div></div>';
+  $('autoSw').onclick=()=>{
+    const next=!on;
+    modal('무인 운영 '+(next?'켜기':'끄기'),
+      next?'노트북을 켜면 자동으로 수집을 시작하도록 설정합니다.\n관리자 확인(UAC)이 뜹니다.'
+          :'자동 시작을 끄고 수동으로 되돌립니다.\n관리자 확인(UAC)이 뜹니다.',[
+      ['취소','',null],['진행','primary',async()=>{
+        const j=await api('api/control/service',{action:next?'auto-on':'auto-off',confirm:true});
+        toast(j.ok?'요청됨 — 잠시 후 반영됩니다':(j.error?.message||'실패'));
+        setTimeout(loadUnattended,1500);
+      }]]);
+  };
+}
 function coreCtl(action,label){
   modal('확인',label+'할까요?'+(action!=='start'?'\n중지 동안 태그가 기록되지 않습니다.':''),[
     ['취소','',null],['진행','primary',async()=>{const j=await api('api/control/core',{action,confirm:true});
@@ -212,32 +240,35 @@ function renderCatalog(){
       '<div class="wsetup"><button class="btn primary" id="catPick">카탈로그 파일 선택</button>'+
       '<span class="tag-note">다운로드 폴더에 두면 자동으로도 감지됩니다</span></div>';
     const pk=$('catPick');if(pk)pk.onclick=pickCatalogFile;return;}
+  const ids=wizardReaderIds();
+  const multi=ids.length>1;
   bar.innerHTML='이벤트 <b>'+esc(c.eventName)+'</b> · 기준 '+esc((c.exportedAt||'').slice(0,16).replace('T',' '))+
     ' <button class="btn sm" id="catRefresh">새로고침</button>'+
-    ' <button class="btn sm" id="catPick2">다른 파일 선택</button>'+
-    (selectTarget?' <b>'+esc(selectTarget)+'</b> 리더에 지정할 세션을 클릭하세요 <button class="btn sm" id="pickCancel">취소</button>':'');
-  const rows=(c.sessions||[]).map(s=>'<tr class="'+(selectTarget?'pick':'')+'" data-s="'+esc(s.id)+'">'+
-    '<td>'+esc(s.name)+'</td><td>'+esc(s.unitName)+'</td><td>'+esc(s.tokenLabel||'—')+'</td>'+
-    '<td>'+esc(s.assignedReaderId||'—')+'</td></tr>').join('');
-  box.innerHTML='<table class="tbl"><tr><th>세션</th><th>유닛</th><th>라벨</th><th>지정된 리더</th></tr>'+rows+'</table>';
+    ' <button class="btn sm" id="catPick2">다른 파일 선택</button>';
+  if(ids.length===0){
+    box.innerHTML='<div class="banner warn">설정에 리더가 없습니다 — [설정] 탭에서 리더를 먼저 추가하세요.</div>';
+    const rf0=$('catRefresh');if(rf0)rf0.onclick=async()=>{await api('api/catalog/refresh',{confirm:true});loadCatalog();};
+    const p0=$('catPick2');if(p0)p0.onclick=pickCatalogFile;return;
+  }
+  const hint='<div class="hint">사용할 세션 행의 <b>[선택]</b> 버튼을 누르세요'+(multi?' (어느 리더에 지정할지 물어봅니다).':'.')+'</div>';
+  const rows=(c.sessions||[]).map(s=>{
+    const assigned=s.assignedReaderId?'<span class="verified">'+esc(s.assignedReaderId)+' ✓</span>':'—';
+    return '<tr><td><b>'+esc(s.name)+'</b></td><td>'+esc(s.unitName)+'</td><td>'+esc(s.tokenLabel||'—')+'</td>'+
+      '<td>'+assigned+'</td><td style="text-align:right"><button class="btn sm primary" data-s="'+esc(s.id)+'">선택</button></td></tr>';
+  }).join('');
+  box.innerHTML=hint+'<table class="tbl"><tr><th>세션</th><th>유닛</th><th>라벨</th><th>지정된 리더</th><th></th></tr>'+rows+'</table>';
   const rf=$('catRefresh');if(rf)rf.onclick=async()=>{await api('api/catalog/refresh',{confirm:true});loadCatalog();};
   const pk2=$('catPick2');if(pk2)pk2.onclick=pickCatalogFile;
-  const pc=$('pickCancel');if(pc)pc.onclick=()=>{selectTarget=null;renderCatalog();};
-  if(selectTarget)box.querySelectorAll('tr.pick').forEach(tr=>tr.onclick=()=>applySession(selectTarget,tr.dataset.s));
-  // 리더별 세션 선택 버튼 — 리더 목록은 config(항상 존재)에서. 대기 상태에선
-  // LAST_STATE.readers 가 비어 있으므로 config 를 써야 버튼이 나온다.
-  if(!selectTarget){
-    const ids=wizardReaderIds();
-    const strip=document.createElement('div');strip.style.marginTop='12px';strip.className='wsetup';
-    if(ids.length===0){
-      strip.innerHTML='<span class="tag-note">설정에 리더가 없습니다 — [설정] 탭에서 리더를 추가하세요</span>';
-    }else{
-      strip.insertAdjacentHTML('beforeend','<span class="tag-note">지정할 리더:</span> ');
-      ids.forEach(id=>{const b=document.createElement('button');b.className='btn sm';
-        b.textContent=id+' 세션 선택';b.onclick=()=>{selectTarget=id;renderCatalog();box.scrollIntoView({behavior:'smooth'});};strip.appendChild(b);});
-    }
-    box.appendChild(strip);
-  }
+  box.querySelectorAll('button[data-s]').forEach(b=>b.onclick=()=>chooseReaderThenApply(b.dataset.s));
+}
+// 세션 [선택] → 리더가 하나면 바로 지정, 여러 개면 리더를 물어본다.
+function chooseReaderThenApply(sessionId){
+  const ids=wizardReaderIds();
+  if(ids.length===0){modal('리더 없음','[설정] 탭에서 리더를 먼저 추가하세요.',[['닫기','primary',null]]);return;}
+  if(ids.length===1){applySession(ids[0],sessionId);return;}
+  const s=(CATALOG.sessions||[]).find(x=>x.id===sessionId)||{};
+  modal("'"+(s.name||sessionId)+"' 세션을 어느 리더에 지정할까요?",'',
+    ids.map(id=>[id,'primary',()=>applySession(id,sessionId)]).concat([['취소','',null]]));
 }
 function applySession(readerId,sessionId){
   const s=(CATALOG.sessions||[]).find(x=>x.id===sessionId)||{};
@@ -245,7 +276,6 @@ function applySession(readerId,sessionId){
     (META.mode==='hosting'?'적용을 위해 수집이 잠시 재시작됩니다.':'저장 후 서비스 재시작이 필요합니다.'),[
     ['취소','',null],['지정','primary',async()=>{
       const j=await api('api/readers/'+encodeURIComponent(readerId)+'/session',{sessionId,confirm:true});
-      selectTarget=null;
       if(j.ok){toast(j.data.message||'적용됨');loadCatalog();}else modal('실패',j.error?.message||'오류',[['닫기','primary',null]]);
     }]]);
 }
@@ -404,7 +434,7 @@ fetch('api/meta').then(r=>r.json()).then(({data})=>{
     const h=$('headline');if(h){h.textContent='⚠ '+data.dataDirError;}
     modal('데이터 폴더 오류',data.dataDirError+'\n\n관리자 권한으로 다시 설치하거나, 데이터 폴더('+(data.dataDir||'')+')의 쓰기 권한을 확인하세요.',[['닫기','primary',null]]);
   }
-  renderCtrl(LAST_STATE);loadCatalog();loadConfig();loadWizard();
+  renderCtrl(LAST_STATE);loadCatalog();loadConfig();loadWizard();loadUnattended();
 });
 function connectSSE(){
   const es=new EventSource('api/events');

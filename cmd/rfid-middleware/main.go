@@ -293,6 +293,24 @@ func cmdService(args []string) error {
 		return winsvc.Start()
 	case "stop":
 		return winsvc.Stop()
+	case "auto":
+		// service auto on|off --config <path> — 무인 운영(부팅 시 자동 시작) 켜기/끄기.
+		// "on"/"off" 가 비-플래그라 위 fs 파싱이 그 앞에서 멈춘다 — 여기서 자체 파싱.
+		rest := fs.Args() // 예: ["on", "--config", "path"]
+		if len(rest) < 1 || (rest[0] != "on" && rest[0] != "off") {
+			return fmt.Errorf("사용법: rfid-middleware service auto on|off --config <path>")
+		}
+		on := rest[0] == "on"
+		af := flag.NewFlagSet("service auto", flag.ContinueOnError)
+		acfg := af.String("config", "", "설정 파일 경로")
+		if err := af.Parse(rest[1:]); err != nil {
+			return err
+		}
+		if err := winsvc.SetAutoStart(*acfg, on); err != nil {
+			return err
+		}
+		fmt.Printf("무인 자동 시작: %v\n", on)
+		return nil
 	default:
 		return fmt.Errorf("알 수 없는 service 명령: %s", sub)
 	}

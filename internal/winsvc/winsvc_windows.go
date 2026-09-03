@@ -172,3 +172,71 @@ func Stop() error {
 	_, err = s.Control(svc.Stop)
 	return err
 }
+
+// SetAutoStart 는 무인 운영(부팅 시 자동 시작)을 켜거나 끈다 (관리자 권한).
+// on: 서비스 없으면 설치 → Automatic(Delayed) + 지금 시작.
+// off: Manual 로 되돌리고 중지. 서비스가 없으면 무시.
+func SetAutoStart(configPath string, on bool) error {
+	if !on {
+		// 자동 시작 끄기 = Manual 로 등록/교정 + 중지
+		if err := Install(configPath); err != nil {
+			return err
+		}
+		_ = Stop()
+		return nil
+	}
+	// 자동 시작 켜기
+	if err := Install(configPath); err != nil {
+		return err
+	}
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(ServiceName)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	cfg, err := s.Config()
+	if err != nil {
+		return err
+	}
+	cfg.StartType = mgr.StartAutomatic
+	cfg.DelayedAutoStart = true
+	if err := s.UpdateConfig(cfg); err != nil {
+		return err
+	}
+	_ = s.Start() // 지금 바로 시작 (이미 실행 중이면 무시)
+	return nil
+}
+
+// AutoStartInfo 는 GUI 표시용 서비스 상태다 (비관리자 조회 가능).
+type AutoStartInfo struct {
+	Installed bool
+	AutoStart bool // Automatic 이면 true (무인 모드 켜짐)
+	Running   bool
+}
+
+// QueryAutoStart 는 서비스 설치·자동시작·실행 여부를 조회한다 (권한 불필요).
+func QueryAutoStart() AutoStartInfo {
+	m, err := mgr.Connect()
+	if err != nil {
+		return AutoStartInfo{}
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(ServiceName)
+	if err != nil {
+		return AutoStartInfo{Installed: false}
+	}
+	defer s.Close()
+	info := AutoStartInfo{Installed: true}
+	if cfg, cerr := s.Config(); cerr == nil {
+		info.AutoStart = cfg.StartType == mgr.StartAutomatic
+	}
+	if st, serr := s.Query(); serr == nil {
+		info.Running = st.State == svc.Running || st.State == svc.StartPending
+	}
+	return info
+}
