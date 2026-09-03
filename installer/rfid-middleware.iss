@@ -118,7 +118,8 @@ end;
 // 리더 연결 정보 입력 페이지 — 행사장마다 리더 주소가 다르므로 설치 시 받는다.
 // 기존 config 가 있으면 현재 값을 미리 채워, 그대로 두면 유지·바꾸면 반영된다.
 procedure InitializeWizard;
-var cfg, raw, curID, curAddr: string;
+var cfg, curID, curAddr, rawS: string;
+    raw: AnsiString;
 begin
   ReaderPage := CreateInputQueryPage(wpSelectTasks,
     'RFID 리더 설정',
@@ -131,8 +132,9 @@ begin
   cfg := ExpandConstant('{#ConfigPath}');
   if FileExists(cfg) and LoadStringFromFile(cfg, raw) then
   begin
-    if JsonStr(raw, 'id') <> '' then curID := JsonStr(raw, 'id');
-    if JsonStr(raw, 'addr') <> '' then curAddr := JsonStr(raw, 'addr');
+    rawS := raw;
+    if JsonStr(rawS, 'id') <> '' then curID := JsonStr(rawS, 'id');
+    if JsonStr(rawS, 'addr') <> '' then curAddr := JsonStr(rawS, 'addr');
   end;
   ReaderPage.Values[0] := curID;
   ReaderPage.Values[1] := curAddr;
