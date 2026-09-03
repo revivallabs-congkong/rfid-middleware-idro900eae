@@ -130,6 +130,15 @@ func WriteConfig(cfgPath string, e ConfigEdit) (bak string, err error) {
 	if e.SessionsFile != "" {
 		m["sessionsFile"] = e.SessionsFile
 	}
+	// 단일 리더 환경에서 이름(ID)만 바꾸면 id-매칭이 어긋나 토큰이 유실된다.
+	// old·new 모두 리더가 1개면 이름이 달라도 그 토큰을 이어받는다(안전한 이전).
+	var loneOld *[2]string
+	if len(oldTokens) == 1 && len(e.Readers) == 1 {
+		for _, v := range oldTokens {
+			vv := v
+			loneOld = &vv
+		}
+	}
 	var readers []map[string]any
 	for _, r := range e.Readers {
 		tok := "0000000000000000000000000000000000000000000000000000000000000000"
@@ -139,6 +148,11 @@ func WriteConfig(cfgPath string, e ConfigEdit) (bak string, err error) {
 				tok = prev[0]
 			}
 			sid = prev[1]
+		} else if loneOld != nil {
+			if loneOld[0] != "" {
+				tok = loneOld[0]
+			}
+			sid = loneOld[1]
 		}
 		rm := map[string]any{"id": r.ID, "addr": r.Addr, "pulseToken": tok}
 		if sid != "" {

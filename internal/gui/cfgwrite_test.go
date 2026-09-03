@@ -52,6 +52,32 @@ func TestWriteReaderSessionAndRollback(t *testing.T) {
 	}
 }
 
+// 단일 리더 이름(ID) 변경 시 세션 토큰이 유실되지 않아야 한다.
+func TestWriteConfigRenamePreservesToken(t *testing.T) {
+	p := writeCfg(t) // gate-a + tok1
+	dir := filepath.Dir(p)
+	_, err := WriteConfig(p, ConfigEdit{
+		APIHost: "https://api.congkong.net", DataDir: dir,
+		DebounceSec: 60, QueueMaxAgeHours: 24, RequestTimeoutSec: 10,
+		PowerGain: 300, Buzzer: 0, LogLevel: "info",
+		Readers: []ReaderEdit{{ID: "gate-x", Addr: "192.168.9.6:5578"}}, // 이름만 변경
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, ok := cfg.Reader("gate-x")
+	if !ok {
+		t.Fatal("이름 변경된 리더가 없음")
+	}
+	if r.Token.Raw() != tok1 {
+		t.Fatalf("이름 변경 후 토큰 유실: %s", r.Token.Raw())
+	}
+}
+
 func TestWriteReaderSessionUnknownReader(t *testing.T) {
 	p := writeCfg(t)
 	if _, err := WriteReaderSession(p, "nope", "s", tok2); err == nil {
