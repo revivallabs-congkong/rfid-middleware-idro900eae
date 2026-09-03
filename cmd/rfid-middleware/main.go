@@ -285,7 +285,15 @@ func cmdService(args []string) error {
 		if err := winsvc.Install(*cfgPath); err != nil {
 			return err
 		}
-		fmt.Printf("서비스 %s 설치 완료 (Automatic, Delayed Start)\n", winsvc.ServiceName)
+		fmt.Printf("서비스 %s 등록 완료 (수동 시작 — 부팅 자동 시작 안 함)\n", winsvc.ServiceName)
+		return nil
+	case "reset":
+		// 남은 서비스를 정지 + 수동(Manual)으로 되돌린다. 서비스가 없으면 no-op.
+		// 설치 시 항상 호출해 예전 Automatic 서비스의 부팅 자동 수집을 없앤다.
+		if err := winsvc.Reset(); err != nil {
+			return err
+		}
+		fmt.Println("서비스 상태 정리 완료 (실행 중이면 정지, 수동 시작으로 설정)")
 		return nil
 	case "uninstall":
 		return winsvc.Uninstall()

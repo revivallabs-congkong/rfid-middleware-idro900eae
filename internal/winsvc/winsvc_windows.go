@@ -207,6 +207,29 @@ func SetAutoStart(configPath string, on bool) error {
 	return s.UpdateConfig(cfg)
 }
 
+// Reset 은 남은 서비스를 정지 + 수동(Manual) 시작으로 되돌린다 (관리자 권한).
+// 서비스가 설치돼 있지 않으면 아무것도 하지 않는다(no-op). 설치 시 항상 호출해
+// 예전 Automatic 서비스가 부팅 때 몰래 수집을 시작하는 것을 뿌리부터 없앤다.
+func Reset() error {
+	m, err := mgr.Connect()
+	if err != nil {
+		return err
+	}
+	defer m.Disconnect()
+	s, err := m.OpenService(ServiceName)
+	if err != nil {
+		return nil // 서비스 없음 — 정리할 것 없음
+	}
+	defer s.Close()
+	_, _ = s.Control(svc.Stop) // 실행 중이면 정지 (아니면 무시)
+	if cfg, cerr := s.Config(); cerr == nil {
+		cfg.StartType = mgr.StartManual
+		cfg.DelayedAutoStart = false
+		_ = s.UpdateConfig(cfg)
+	}
+	return nil
+}
+
 // AutoStartInfo 는 GUI 표시용 서비스 상태다 (비관리자 조회 가능).
 type AutoStartInfo struct {
 	Installed bool

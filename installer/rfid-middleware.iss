@@ -57,6 +57,10 @@ Name: "{autodesktop}\CongKong RFID 콘솔"; Filename: "{app}\rfid-middleware.exe
 [Run]
 ; 데이터 폴더에 사용자 쓰기 권한을 확실히 부여 (icacls — [Dirs] 보완).
 Filename: "icacls"; Parameters: """{#DataDir}"" /grant *S-1-5-32-545:(OI)(CI)M /T /C"; Flags: runhidden; StatusMsg: "데이터 폴더 권한 설정 중..."
+; 예전 설치에서 남은 서비스가 부팅 때 몰래 수집을 시작하지 않도록, 옵션과 무관하게
+; 항상 정지 + 수동 시작으로 되돌린다 (서비스가 없으면 no-op). 이래야 최초 실행이
+; "수집 대기" 로 깨끗하게 뜬다.
+Filename: "{app}\rfid-middleware.exe"; Parameters: "service reset"; Flags: runhidden waituntilterminated; StatusMsg: "기존 서비스 상태 정리 중..."
 ; 서비스 등록 (옵션). config.json 은 [Code] ssPostInstall 에서 이미 준비됨.
 ; 서비스는 등록만 한다(자동 시작하지 않는다). 최초 실행은 사람이 콘솔을 열어
 ; 세션을 설정하고 수집을 켠다. 서비스는 이후 재부팅부터 무인 자동 시작한다.
