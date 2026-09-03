@@ -78,6 +78,19 @@ Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service uninstall --config ""{#ConfigPath}"""; Flags: runhidden; RunOnceId: "SvcUninstall"
 
 [Code]
+// 파일 복사 전에 실행 중인 서비스를 멈춘다. 서비스가 {app}\rfid-middleware.exe 를
+// 잠그고 있으면 새 exe 로 교체할 수 없고 [Run] 의 'service reset' 도 옛 exe 를
+// 실행하게 된다. sc.exe 로 정지 + 수동 시작으로 되돌려 부팅 자동 수집을 없앤다.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var rc: Integer;
+begin
+  Exec(ExpandConstant('{sys}\sc.exe'), 'stop ' + 'CongKongRFIDMiddleware',
+    '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Exec(ExpandConstant('{sys}\sc.exe'), 'config ' + 'CongKongRFIDMiddleware start= demand',
+    '', SW_HIDE, ewWaitUntilTerminated, rc);
+  Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var dataDir, cfg, ex: string;
 begin

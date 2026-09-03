@@ -129,6 +129,20 @@ func Run(ctx context.Context, opts Options) error {
 			if !state.Suspended() {
 				state = domain.GatePreflightPending
 			}
+			// SUSPENDED_TOKEN 예외: 운영자가 *다른* 토큰으로 바꿨고 대기 행이
+			// 없으면, 회수된 옛 토큰의 suspension 은 의미가 없다 — 새 토큰을
+			// preflight 로 재검증한다. (REBIND/CONFIG 나 대기 잔량이 있는 경우는
+			// 오배송 위험이 있어 그대로 유지하고 명시적 resume 을 요구한다.)
+			if state == domain.GateSuspendedToken && r.Token.Fingerprint() != row.TokenFingerprint {
+				if pc, perr := st.PendingCount(r.ID); perr == nil && pc == 0 {
+					log.Warnf("GATE_TOKEN_CHANGED_REVERIFY", logging.F{
+						"readerId": r.ID, "message": "토큰 변경 + 대기 0건 — 회수 상태 해제 후 재검증",
+					})
+					state = domain.GatePreflightPending
+					_ = st.SetGate(r.ID, state, "operator changed token",
+						clk.Now().UnixMilli(), r.Token.Fingerprint(), nil)
+				}
+			}
 			gates.Init(r.ID, gate.Entry{
 				State: state, Reason: row.Reason,
 				Fingerprint: row.TokenFingerprint, Meta: row.Meta,
