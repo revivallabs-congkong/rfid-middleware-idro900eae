@@ -71,6 +71,8 @@ func run(args []string) error {
 		return cmdService(args[1:])
 	case "net":
 		return cmdNet(args[1:])
+	case "config":
+		return cmdConfig(args[1:])
 	case "version":
 		fmt.Println(version)
 		return nil
@@ -81,6 +83,62 @@ func run(args []string) error {
 		fmt.Print(usage)
 		return fmt.Errorf("알 수 없는 명령: %s", args[0])
 	}
+}
+
+// cmdConfig 은 설정 파일 편집이다 (인스톨러가 설치 시 리더 값을 반영).
+//   config set-reader --id <id> --addr <addr> --config <path> [--datadir <dir>]
+// 기존 config 가 있으면 첫 리더의 id/addr 만 바꾸고 나머지(토큰 포함)는 보존한다.
+// 없으면 기본값으로 새로 만든다.
+func cmdConfig(args []string) error {
+	if len(args) < 1 || args[0] != "set-reader" {
+		return fmt.Errorf("사용법: rfid-middleware config set-reader --id <id> --addr <addr> --config <path> [--datadir <dir>]")
+	}
+	fs := flag.NewFlagSet("config set-reader", flag.ContinueOnError)
+	id := fs.String("id", "", "리더 ID")
+	addr := fs.String("addr", "", "리더 주소 host:port")
+	cfgPath := fs.String("config", "", "설정 파일 경로")
+	dataDir := fs.String("datadir", "", "데이터 폴더(신규 생성 시)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *id == "" || *addr == "" || *cfgPath == "" {
+		return fmt.Errorf("--id, --addr, --config 가 필요합니다")
+	}
+	var e gui.ConfigEdit
+	if cfg, err := config.Load(*cfgPath); err == nil {
+		// 기존 설정 유지, 첫 리더만 교체 (토큰은 WriteConfig 가 보존)
+		e = gui.ConfigEdit{
+			APIHost: cfg.APIHost, DataDir: cfg.DataDir, DebounceSec: cfg.DebounceSec,
+			QueueMaxAgeHours: cfg.QueueMaxAgeHours, RequestTimeoutSec: cfg.RequestTimeoutSec,
+			PowerGain: cfg.PowerGain, Buzzer: cfg.Buzzer, LogLevel: cfg.LogLevel,
+			SessionsFile: cfg.SessionsFile,
+		}
+		for _, r := range cfg.Readers {
+			e.Readers = append(e.Readers, gui.ReaderEdit{ID: r.ID, Addr: r.Addr})
+		}
+		if len(e.Readers) == 0 {
+			e.Readers = []gui.ReaderEdit{{}}
+		}
+		e.Readers[0].ID = *id
+		e.Readers[0].Addr = *addr
+	} else {
+		// 신규 — 기본값으로 생성
+		dd := *dataDir
+		if dd == "" {
+			dd = filepath.Dir(*cfgPath)
+		}
+		e = gui.ConfigEdit{
+			APIHost: "https://api.congkong.net", DataDir: dd,
+			DebounceSec: 60, QueueMaxAgeHours: 24, RequestTimeoutSec: 10,
+			PowerGain: 300, Buzzer: 0, LogLevel: "info",
+			Readers: []gui.ReaderEdit{{ID: *id, Addr: *addr}},
+		}
+	}
+	if _, err := gui.WriteConfig(*cfgPath, e); err != nil {
+		return err
+	}
+	fmt.Printf("리더 설정 반영: id=%s addr=%s\n", *id, *addr)
+	return nil
 }
 
 // cmdNet 은 호스트 네트워크 설정이다 (GUI 가 관리자 권한으로 재실행).

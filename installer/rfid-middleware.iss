@@ -61,7 +61,11 @@ Filename: "icacls"; Parameters: """{#DataDir}"" /grant *S-1-5-32-545:(OI)(CI)M /
 ; 항상 정지 + 수동 시작으로 되돌린다 (서비스가 없으면 no-op). 이래야 최초 실행이
 ; "수집 대기" 로 깨끗하게 뜬다.
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service reset"; Flags: runhidden waituntilterminated; StatusMsg: "기존 서비스 상태 정리 중..."
-; 서비스 등록 (옵션). config.json 은 [Code] ssPostInstall 에서 이미 준비됨.
+; 설치 마법사에서 입력한 리더 ID/주소를 config 에 반영한다. 기존 config 가 있으면
+; 첫 리더의 id/addr 만 바꾸고 세션 토큰 등 나머지는 보존, 없으면 새로 만든다.
+; (재설치에도 입력값이 적용되도록 — 마법사 기본값은 기존 config 에서 미리 채워짐)
+Filename: "{app}\rfid-middleware.exe"; Parameters: "config set-reader --id ""{code:GetReaderID}"" --addr ""{code:GetReaderAddr}"" --config ""{#ConfigPath}"" --datadir ""{#DataDir}"""; Flags: runhidden waituntilterminated; StatusMsg: "리더 설정을 반영하는 중..."
+; 서비스 등록 (옵션).
 ; 서비스는 등록만 한다(자동 시작하지 않는다). 최초 실행은 사람이 콘솔을 열어
 ; 세션을 설정하고 수집을 켠다. 서비스는 이후 재부팅부터 무인 자동 시작한다.
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service install --config ""{#ConfigPath}"""; Flags: runhidden waituntilterminated; Tasks: svc; StatusMsg: "서비스를 등록하는 중..."
@@ -78,15 +82,43 @@ Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}
 Filename: "{app}\rfid-middleware.exe"; Parameters: "service uninstall --config ""{#ConfigPath}"""; Flags: runhidden; RunOnceId: "SvcUninstall"
 
 [Code]
-const
-  ZeroToken = '0000000000000000000000000000000000000000000000000000000000000000';
-
 var
   ReaderPage: TInputQueryWizardPage;
 
+// JSON 문자열 값 추출 — 기존 config 에서 첫 "id"/"addr" 값을 뽑아 마법사 기본값을
+// 채우는 용도(간단 파서). config 는 항상 우리 프로그램이 생성하므로 형식이 단순하다.
+function JsonStr(const s, key: string): string;
+var i, j: Integer; rest: string;
+begin
+  Result := '';
+  i := Pos('"' + key + '"', s);
+  if i = 0 then exit;
+  rest := Copy(s, i + Length(key) + 2, Length(s));
+  i := Pos(':', rest);
+  if i = 0 then exit;
+  rest := Copy(rest, i + 1, Length(rest));
+  i := Pos('"', rest);
+  if i = 0 then exit;
+  rest := Copy(rest, i + 1, Length(rest));
+  j := Pos('"', rest);
+  if j = 0 then exit;
+  Result := Copy(rest, 1, j - 1);
+end;
+
+// 마법사 값 접근자 ({code:...} 로 [Run] 에서 사용).
+function GetReaderID(Param: string): string;
+begin
+  Result := Trim(ReaderPage.Values[0]);
+end;
+function GetReaderAddr(Param: string): string;
+begin
+  Result := Trim(ReaderPage.Values[1]);
+end;
+
 // 리더 연결 정보 입력 페이지 — 행사장마다 리더 주소가 다르므로 설치 시 받는다.
-// (config 가 이미 있으면 보존하므로, 이 값은 최초 설치에서만 쓰인다.)
+// 기존 config 가 있으면 현재 값을 미리 채워, 그대로 두면 유지·바꾸면 반영된다.
 procedure InitializeWizard;
+var cfg, raw, curID, curAddr: string;
 begin
   ReaderPage := CreateInputQueryPage(wpSelectTasks,
     'RFID 리더 설정',
@@ -94,8 +126,16 @@ begin
     '행사장 리더의 주소를 입력합니다. 나중에 콘솔의 [점검·설정 › 설정]에서 바꿀 수 있습니다.');
   ReaderPage.Add('리더 ID (라벨, 예: gate-a)', False);
   ReaderPage.Add('리더 주소 IP:포트 (예: 192.168.9.6:5578)', False);
-  ReaderPage.Values[0] := 'gate-a';
-  ReaderPage.Values[1] := '192.168.9.6:5578';
+  curID := 'gate-a';
+  curAddr := '192.168.9.6:5578';
+  cfg := ExpandConstant('{#ConfigPath}');
+  if FileExists(cfg) and LoadStringFromFile(cfg, raw) then
+  begin
+    if JsonStr(raw, 'id') <> '' then curID := JsonStr(raw, 'id');
+    if JsonStr(raw, 'addr') <> '' then curAddr := JsonStr(raw, 'addr');
+  end;
+  ReaderPage.Values[0] := curID;
+  ReaderPage.Values[1] := curAddr;
 end;
 
 // 리더 주소 형식 최소 검증 (host:port).
@@ -133,37 +173,5 @@ begin
   Result := '';
 end;
 
-procedure CurStepChanged(CurStep: TSetupStep);
-var dataDir, ddJson, cfg, rid, raddr, content: string;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    dataDir := ExpandConstant('{#DataDir}');
-    ForceDirectories(dataDir);
-    cfg := ExpandConstant('{#ConfigPath}');
-    // 기존 config 는 보존한다 (세션 토큰·설정 유지, 재설치 안전).
-    if not FileExists(cfg) then
-    begin
-      rid := Trim(ReaderPage.Values[0]);
-      raddr := Trim(ReaderPage.Values[1]);
-      ddJson := dataDir;
-      StringChangeEx(ddJson, '\', '\\', True); // JSON escape
-      content :=
-        '{' + #13#10 +
-        '  "version": 1,' + #13#10 +
-        '  "apiHost": "https://api.congkong.net",' + #13#10 +
-        '  "dataDir": "' + ddJson + '",' + #13#10 +
-        '  "debounceSec": 60,' + #13#10 +
-        '  "queueMaxAgeHours": 24,' + #13#10 +
-        '  "requestTimeoutSec": 10,' + #13#10 +
-        '  "powerGain": 300,' + #13#10 +
-        '  "buzzer": 0,' + #13#10 +
-        '  "logLevel": "info",' + #13#10 +
-        '  "readers": [' + #13#10 +
-        '    { "id": "' + rid + '", "addr": "' + raddr + '", "pulseToken": "' + ZeroToken + '" }' + #13#10 +
-        '  ]' + #13#10 +
-        '}' + #13#10;
-      SaveStringToFile(cfg, content, False);
-    end;
-  end;
-end;
+// config.json 생성/갱신은 [Run] 의 'config set-reader' 가 담당한다
+// (기존 config 의 토큰 보존 + 재설치에도 입력값 반영).
