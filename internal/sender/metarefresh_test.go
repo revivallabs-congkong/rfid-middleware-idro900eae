@@ -163,6 +163,30 @@ func TestMetaRefreshSkipsInactive(t *testing.T) {
 	}
 }
 
+// FR-02b: 재조회 HTTP 응답이 오는 동안 체크인 404 등이 게이트를 정지시키면,
+// 늦게 도착한 200 이 그 정지를 ACTIVE 로 되돌리면 안 된다 (원자적 CAS).
+// 서버 핸들러가 응답 직전에 게이트를 SUSPENDED_TOKEN 으로 바꿔 그 창을 재현한다.
+func TestMetaRefreshDoesNotRevertSuspendDuringCall(t *testing.T) {
+	gates := gate.NewRegistry()
+	activeGate(gates, "세션1", 60)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 응답 직전에 다른 경로(체크인 404)가 토큰을 정지시킨 상황을 모사
+		gates.Set(nil, "gate-a", domain.GateSuspendedToken, "preflight 404 — 토큰 회수/무효", 0, "", nil)
+		w.Write([]byte(`{"eventName":"E","boothName":"A 게이트","unitName":"세션2","cooldownSec":60}`))
+	}))
+	defer srv.Close()
+	cp := &countPersister{}
+	newRefresher(srv.URL, gates, cp).tick(context.Background(), "gate-a", domain.NewSecret(testToken))
+
+	g, _ := gates.Get("gate-a")
+	if g.State != domain.GateSuspendedToken {
+		t.Errorf("state = %s, 재조회가 정지를 되돌림 (SUSPENDED_TOKEN 유지여야 함)", g.State)
+	}
+	if cp.n != 0 {
+		t.Errorf("정지 상태에 SetGate %d회 (0회여야 함)", cp.n)
+	}
+}
+
 // 재조회 주기는 60초 ± 10초 안에 있다.
 func TestMetaRefreshNextDelayBounds(t *testing.T) {
 	m := &MetaRefresher{}

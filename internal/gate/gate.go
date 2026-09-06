@@ -103,6 +103,38 @@ func (r *Registry) Set(p Persister, readerID string, state domain.GateState, rea
 	return p.SetGate(readerID, state, reason, nowMS, fingerprint, meta)
 }
 
+// RefreshMeta 는 meta 재조회 전용 원자적 갱신이다 (pulse-middleware-v2 FR-02b).
+// 잠금 안에서 현재 상태를 다시 확인해:
+//   - 현재 Sendable(ACTIVE/ACTIVE_WARNING) 이 아니면 아무것도 하지 않는다.
+//     (재조회 HTTP 응답이 오는 동안 체크인 404 등이 게이트를 정지시켰을 수 있으므로,
+//      늦게 온 200 이 그 정지를 되돌리지 못하게 한다.)
+//   - 목표 state·meta 가 현재와 같으면 쓰지 않는다(변화 없음 → 영속화·알림 0).
+//   - fingerprint 는 건드리지 않고 현재 값을 그대로 보존한다.
+// 실제로 갱신했으면 applied=true 를 돌려준다.
+func (r *Registry) RefreshMeta(p Persister, readerID string, state domain.GateState, reason string, nowMS int64, meta domain.GateMeta) (applied bool, err error) {
+	r.mu.Lock()
+	e, ok := r.entries[readerID]
+	if !ok || !e.State.Sendable() {
+		r.mu.Unlock()
+		return false, nil
+	}
+	if e.State == state && e.Meta == meta {
+		r.mu.Unlock()
+		return false, nil // 변화 없음
+	}
+	fp := e.Fingerprint // 재조회는 fingerprint 를 바꾸지 않는다
+	e.State = state
+	e.Reason = reason
+	e.Meta = meta
+	r.entries[readerID] = e
+	r.mu.Unlock()
+	r.notify()
+	if p == nil {
+		return true, nil
+	}
+	return true, p.SetGate(readerID, state, reason, nowMS, fp, &meta)
+}
+
 func (r *Registry) Get(readerID string) (Entry, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

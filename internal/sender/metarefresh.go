@@ -69,7 +69,7 @@ func (m *MetaRefresher) nextDelay() time.Duration {
 func (m *MetaRefresher) tick(ctx context.Context, readerID string, token domain.Secret) {
 	e, ok := m.Gates.Get(readerID)
 	if !ok || !e.State.Sendable() {
-		return // 활성(ACTIVE/ACTIVE_WARNING) 리더만 재조회
+		return // 활성(ACTIVE/ACTIVE_WARNING) 리더만 재조회 (HTTP 생략)
 	}
 	res := m.Client.Preflight(ctx, token)
 	// 200 + 계약 준수만 반영. 그 외는 상태·fingerprint 불변.
@@ -80,9 +80,6 @@ func (m *MetaRefresher) tick(ctx context.Context, readerID string, token domain.
 	if !valid {
 		return
 	}
-	if meta == e.Meta {
-		return // 변화 없음 — 영속화·로그 없음
-	}
 	// cooldownSec 0↔양수 → ACTIVE↔ACTIVE_WARNING (FR-02a, preflight 와 동일 문구)
 	state := domain.GateActive
 	reason := ""
@@ -90,10 +87,15 @@ func (m *MetaRefresher) tick(ctx context.Context, readerID string, token domain.
 		state = domain.GateActiveWarning
 		reason = "cooldownSec=0 — 재시도 멱등성 미보장"
 	}
-	// fingerprint 는 기존 값을 그대로 보존한다 (FR-02b — rebind 키 불변).
-	if err := m.Gates.Set(m.Store, readerID, state, reason, m.Clock.Now().UnixMilli(), e.Fingerprint, &meta); err != nil {
+	// RefreshMeta 가 잠금 안에서 "지금도 Sendable + 변화 있음"을 다시 확인한다
+	// (HTTP 응답 대기 중 체크인 404 등이 정지시켰으면 되돌리지 않음 — FR-02b).
+	applied, err := m.Gates.RefreshMeta(m.Store, readerID, state, reason, m.Clock.Now().UnixMilli(), meta)
+	if err != nil {
 		m.Log.Warnf("META_REFRESH_PERSIST_FAILED", logging.F{"readerId": readerID, "message": err.Error()})
 		return
+	}
+	if !applied {
+		return // 상태 변화 없거나, 창 사이 정지됨 — 로그·쓰기 없음
 	}
 	m.Log.Infof("META_REFRESHED", logging.F{
 		"readerId":        readerID,
