@@ -189,6 +189,18 @@ func Run(ctx context.Context, opts Options) error {
 		}(r)
 	}
 
+	// meta 재조회 — 활성 리더의 세션(unitName·cooldownSec)을 60초 주기로 갱신해
+	// 서버 세션 전환을 화면·status.json 에 반영한다 (pulse-middleware-v2 FR-02).
+	// suspended 여부와 무관하게 기동하되 tick 이 활성 리더만 서버를 호출한다.
+	for _, r := range cfg.Readers {
+		wg.Add(1)
+		go func(r config.Reader) {
+			defer wg.Done()
+			mr := &sender.MetaRefresher{Client: client, Gates: gates, Store: st, Clock: clk, Log: log}
+			mr.Run(runCtx, r.ID, r.Token)
+		}(r)
+	}
+
 	// sender — 전역 1개 (불변식 12)
 	wg.Add(1)
 	go func() {

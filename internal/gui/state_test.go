@@ -86,3 +86,24 @@ func TestReaderActionText(t *testing.T) {
 		t.Fatalf("번역표 불일치: %+v", r)
 	}
 }
+
+// FR-01: 배지는 boothName + 활성 상태만 본다. unitName 은 무관.
+func TestSessionVerifiedBadge(t *testing.T) {
+	cases := []struct {
+		name       string
+		booth, cat string
+		gateState  string
+		want       bool
+	}{
+		{"booth match + ACTIVE", "A 게이트", "A 게이트", "ACTIVE", true},
+		{"booth match + ACTIVE_WARNING", "A 게이트", "A 게이트", "ACTIVE_WARNING", true},
+		{"booth mismatch", "B 게이트", "A 게이트", "ACTIVE", false},
+		{"not active (pending)", "A 게이트", "A 게이트", "PREFLIGHT_PENDING", false},
+		{"not active (suspended)", "A 게이트", "A 게이트", "SUSPENDED_TOKEN", false},
+	}
+	for _, c := range cases {
+		if got := sessionVerified(c.booth, c.cat, c.gateState); got != c.want {
+			t.Errorf("%s: sessionVerified=%v, want %v", c.name, got, c.want)
+		}
+	}
+}

@@ -262,6 +262,15 @@ func (ga *guiApp) stateLoop(ctx context.Context) {
 }
 
 // augment 는 카탈로그·코어 실행 상태를 State 에 얹는다 (§3.6, §4.3).
+// sessionVerified 는 리더 카드의 ✓ 배지 판정이다. boothName(게이트)만 대조하고
+// gate 가 활성(ACTIVE/ACTIVE_WARNING)이면 검증됨으로 본다. unitName(세션)은 콘솔
+// 에서 언제든 바뀌므로 검증 키로 쓰지 않는다 (pulse-middleware-v2 FR-01 — 서버
+// 세션 바인딩). unitName 은 meta 값을 그대로 카드에 표시한다.
+func sessionVerified(boothName, catalogName, gateState string) bool {
+	return boothName == catalogName &&
+		(gateState == "ACTIVE" || gateState == "ACTIVE_WARNING")
+}
+
 func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 	if ga.ring != nil {
 		st.LogDropped = ga.ring.Dropped()
@@ -321,8 +330,7 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 				continue
 			}
 			r.SessionName = sess.Name
-			r.SessionVerified = r.BoothName == sess.Name && r.UnitName == sess.UnitName &&
-				(r.GateState == "ACTIVE" || r.GateState == "ACTIVE_WARNING")
+			r.SessionVerified = sessionVerified(r.BoothName, sess.Name, r.GateState)
 			if cfg != nil {
 				if cr, ok2 := cfg.Reader(r.ID); ok2 && cr.Token.Raw() != sess.Token {
 					r.UpdateAvailable = true

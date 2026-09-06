@@ -304,12 +304,12 @@ func (w *Wizard) step2(ctx context.Context, cfg *wizardCfg, readerID string) Ste
 	if !ok {
 		return StepResult{Status: StepFail, Detail: "서버 응답 형식 오류"}
 	}
-	m := map[string]string{"부스": meta.BoothName, "유닛": meta.UnitName, "쿨다운(초)": fmt.Sprintf("%d", meta.CooldownSec)}
+	m := map[string]string{"게이트": meta.BoothName, "현재 세션": meta.UnitName, "쿨다운(초)": fmt.Sprintf("%d", meta.CooldownSec)}
 	if meta.CooldownSec <= 0 {
 		return StepResult{Status: StepWarn, Detail: "연결되나 중복 방지(쿨다운)가 꺼져 있음",
 			Action: "운영진에게 쿨다운 설정을 요청하세요", Metrics: m}
 	}
-	return StepResult{Status: StepPass, Detail: fmt.Sprintf("서버 확인 완료 — %s / %s", meta.BoothName, meta.UnitName), Metrics: m}
+	return StepResult{Status: StepPass, Detail: fmt.Sprintf("서버 확인 완료 — 게이트 %s / 현재 세션 %s", meta.BoothName, meta.UnitName), Metrics: m}
 }
 
 // ─── 단계 3a: 실태그 체크인 관측 ───

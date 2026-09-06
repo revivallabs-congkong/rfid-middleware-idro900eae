@@ -112,7 +112,7 @@ function renderReaders(st){
     card.innerHTML=
       '<div class="chead"><span class="rid">'+esc(r.id)+'</span>'+
         '<span class="conn '+(up?'up':'down')+'"><span class="d"></span>'+(up?'연결됨':'끊김')+'</span></div>'+
-      '<div class="sess">'+sess+(r.unitName?' · '+esc(r.unitName):'')+'</div>'+
+      '<div class="sess">'+sess+(r.unitName?' · 현재 세션: '+esc(r.unitName):'')+'</div>'+
       '<div class="metrics" style="grid-template-columns:repeat(3,1fr)">'+
         metric('대기',(r.pending||0)+'건','')+
         metric('마지막 태그',fmtTime(r.lastTagAt))+
@@ -299,7 +299,7 @@ function renderCatalog(){
     return '<tr><td><b>'+esc(s.name)+'</b></td><td>'+esc(s.unitName)+'</td><td>'+esc(s.tokenLabel||'—')+'</td>'+
       '<td>'+assigned+'</td><td style="text-align:right"><button class="btn sm primary" data-s="'+esc(s.id)+'">선택</button></td></tr>';
   }).join('');
-  box.innerHTML=hint+'<table class="tbl"><tr><th>세션</th><th>유닛</th><th>라벨</th><th>지정된 리더</th><th></th></tr>'+rows+'</table>';
+  box.innerHTML=hint+'<table class="tbl"><tr><th>게이트</th><th>세션(내보내기 시점)</th><th>라벨</th><th>지정된 리더</th><th></th></tr>'+rows+'</table>';
   const rf=$('catRefresh');if(rf)rf.onclick=async()=>{await api('api/catalog/refresh',{confirm:true});loadCatalog();};
   const pk2=$('catPick2');if(pk2)pk2.onclick=pickCatalogFile;
   box.querySelectorAll('button[data-s]').forEach(b=>b.onclick=()=>chooseReaderThenApply(b.dataset.s));
