@@ -393,3 +393,24 @@ func TestPreflightSameGateNewTokenProceeds(t *testing.T) {
 		t.Errorf("state = %s, ACTIVE 여야 함", g.State)
 	}
 }
+
+// FR-04: 같은 게이트(boothName 동일) + 다른 토큰 + 세션 전환으로 unitName·cooldown 이
+// 바뀐 재발급 → REBIND 오발 없이 ACTIVE. (구 코드는 prev.Meta != meta 로 REBIND 오발)
+func TestPreflightSameGateChangedMetaProceeds(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"eventName":"E","boothName":"A 게이트","unitName":"세션2","cooldownSec":30}`))
+	}))
+	defer srv.Close()
+	client, _ := congkong.New(srv.URL, time.Second)
+	gates := gate.NewRegistry()
+	gates.Init("gate-a", gate.Entry{
+		State: domain.GateActive, Fingerprint: "old-fingerprint",
+		Meta: domain.GateMeta{EventName: "E", BoothName: "A 게이트", UnitName: "세션1", CooldownSec: 60},
+	})
+	log, _ := logging.New("", logging.Error, nil)
+	p := &Preflight{Client: client, Gates: gates, Clock: clock.Real{}, Log: log}
+	p.Run(context.Background(), "gate-a", domain.NewSecret(testToken))
+	if g, _ := gates.Get("gate-a"); g.State != domain.GateActive {
+		t.Errorf("state = %s, ACTIVE 여야 함 (같은 게이트 unitName 변경은 REBIND 아님)", g.State)
+	}
+}

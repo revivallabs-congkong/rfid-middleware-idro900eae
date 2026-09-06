@@ -74,11 +74,14 @@ func (p *Preflight) attempt(ctx context.Context, readerID string, token domain.S
 			p.Log.Errorf("PREFLIGHT_INVALID_BODY", logging.F{"readerId": readerID})
 			return true
 		}
-		// 토큰이 바뀌면서 gate 이름 tuple 도 바뀌면 pending 오배송 가능성 —
+		// 토큰이 바뀌면서 gate(부스)가 달라지면 pending 오배송 가능성 —
 		// 자동 송신하지 않고 운영자 resume 을 요구한다 (설계서 §8.2).
+		// 게이트 식별은 boothName 만으로 판정한다: 서버 세션 바인딩 이후 같은 게이트
+		// 토큰을 재발급하면 unitName/cooldownSec 이 바뀔 수 있는데, 구조체 전체를
+		// 비교하면 그 차이만으로 REBIND 가 오발된다 (pulse-middleware-v2 FR-04).
 		if prev, exists := p.Gates.Get(readerID); exists &&
 			prev.Fingerprint != "" && prev.Fingerprint != fp &&
-			prev.Meta.BoothName != "" && prev.Meta != meta {
+			prev.Meta.BoothName != "" && prev.Meta.BoothName != meta.BoothName {
 			p.Gates.Set(p.Store, readerID, domain.GateSuspendedRebind,
 				"토큰 변경 + gate 불일치 — queue resume 필요", nowMS, fp, &meta)
 			p.Log.Errorf("GATE_SUSPENDED_REBIND", logging.F{
