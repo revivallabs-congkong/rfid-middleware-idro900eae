@@ -2,6 +2,30 @@
 
 > 작성: 2026-09-01. 이 저장소는 초기 커밋 `c400995` 상태이며 리모트가 아직 없다.
 
+## v0.3.0 — pulse-middleware-v2 (서버 게이트 바인딩 대응, 2026-09-06)
+
+서버가 세션을 `checkedAt` 시점 바인딩으로 판정하도록 바뀌면서(2026-09-05 배포)
+미들웨어의 화면 정확도·가드 정합 4건을 반영. **서버·프로토콜·카탈로그 양식·config
+스키마 무변경**, 미들웨어 코드만 변경.
+
+- **FR-04** `internal/sender/preflight.go` — rebind 가드 2차 조건을 `prev.Meta != meta`
+  (구조체 전체) → `prev.Meta.BoothName != meta.BoothName` 로 축소. 같은 게이트 토큰
+  재발급 시 unitName 차이로 인한 `GATE_SUSPENDED_REBIND` 오발 제거.
+- **FR-01** `internal/gui/run.go` — `SessionVerified` 배지에서 unitName 대조 제거,
+  boothName + 활성 상태만 본다(`sessionVerified()` 순수함수). unitName 은 표시만.
+- **FR-02** `internal/sender/metarefresh.go`(신규) + `internal/app/app.go` — 활성 리더
+  meta 를 60초±10초로 재조회해 세션명·cooldown 을 화면·status.json 에 반영. 200+계약
+  준수만 반영, 그 외 무시(상태·fingerprint 불변), 변화 시에만 영속화+`META_REFRESHED`.
+  cooldown 0↔양수 → ACTIVE↔ACTIVE_WARNING 전환(FR-02a). rebind 가드 미경유(FR-02b).
+- **FR-03** `internal/gui/assets/app.js`·`internal/gui/wizard.go` — 문구: 카탈로그 표
+  "유닛"→"세션(내보내기 시점)"·첫열 "게이트", 리더 카드 "현재 세션:" 라벨, 마법사
+  서버 확인 "게이트/현재 세션".
+- 근거: congkong-v3 `docs/features/pulse/pulse-gate-binding-rfid-guide.ko.md` v1.2 §6,
+  `docs/01-plan/features/pulse-middleware-v2.plan.md`.
+- 스케줄 모드(`session-scheduler`)는 **보류** — 서버 바인딩으로 대체됨.
+- 테스트: FR-04(같은 게이트 unitName 변경→ACTIVE)·재조회(갱신/무시/쿨다운 전환/비활성
+  skip/주기 범위)·FR-01 배지. `go vet`·`-race`·교차빌드 통과.
+
 ## 지금까지 된 것
 
 - 계획서·설계서 검토 후 5건 반영 완료 (계획서 v1.1):
