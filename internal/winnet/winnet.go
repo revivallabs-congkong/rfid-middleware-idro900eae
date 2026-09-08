@@ -55,35 +55,40 @@ func List() []Iface {
 	return out
 }
 
-// HasHostInSubnet 은 어떤 어댑터든 주어진 /24 프리픽스의 IPv4 를 가졌는지다.
-func HasHostInSubnet(prefix string) bool {
-	if prefix == "" {
-		return false
-	}
-	for _, f := range List() {
-		for _, ip := range f.IPv4 {
-			if strings.HasPrefix(ip, prefix) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// SubnetIP 는 리더 대역에 이미 있는 호스트 IP 를 돌려준다(없으면 "").
-func SubnetIP(prefix string) string {
+// hostIPInSubnet 은 리더 대역(prefix)의 IPv4 를 가진 **링크가 살아있는** 어댑터의
+// IP 를 돌려준다(없으면 ""). FlagRunning 을 요구해, 미디어 연결 끊김(케이블 빠짐·
+// 링크 다운) 어댑터에 설정만 남아 있는 IP 를 "사용 가능"으로 오판하지 않는다.
+func hostIPInSubnet(prefix string) string {
 	if prefix == "" {
 		return ""
 	}
-	for _, f := range List() {
-		for _, ip := range f.IPv4 {
-			if strings.HasPrefix(ip, prefix) {
-				return ip
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, in := range ifs {
+		if in.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if in.Flags&net.FlagUp == 0 || in.Flags&net.FlagRunning == 0 {
+			continue // 관리상 up + 링크 up 인 어댑터만 인정
+		}
+		addrs, _ := in.Addrs()
+		for _, a := range addrs {
+			if ipn, ok := a.(*net.IPNet); ok && ipn.IP.To4() != nil &&
+				strings.HasPrefix(ipn.IP.To4().String(), prefix) {
+				return ipn.IP.To4().String()
 			}
 		}
 	}
 	return ""
 }
+
+// HasHostInSubnet 은 리더 대역에 링크가 살아있는 IP 가 있는지다.
+func HasHostInSubnet(prefix string) bool { return hostIPInSubnet(prefix) != "" }
+
+// SubnetIP 는 리더 대역에 있는(링크 살아있는) 호스트 IP 를 돌려준다(없으면 "").
+func SubnetIP(prefix string) string { return hostIPInSubnet(prefix) }
 
 // isAPIPA 는 169.254.x (자동 사설 IP — DHCP 실패)인지다.
 func isAPIPA(ip string) bool { return strings.HasPrefix(ip, "169.254.") }
