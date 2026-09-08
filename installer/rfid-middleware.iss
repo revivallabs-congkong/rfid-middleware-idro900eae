@@ -76,7 +76,7 @@ Filename: "powercfg"; Parameters: "/change hibernate-timeout-ac 0"; Flags: runhi
 Filename: "powercfg"; Parameters: "/change disk-timeout-ac 0"; Flags: runhidden; Tasks: power
 ; 유선 랜 어댑터의 "전원을 절약하기 위해 이 장치를 끌 수 있음" 해제 — 무인 운영 중
 ; NIC 절전으로 링크가 끊겨(‘미디어 연결 끊김’) 리더 접속이 죽는 것을 예방한다.
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { $pm = Get-NetAdapterPowerManagement -Name $_.Name -ErrorAction SilentlyContinue; if ($pm) { $pm.AllowComputerToTurnOffDevice = 'Disabled'; Set-NetAdapterPowerManagement -InputObject $pm -ErrorAction SilentlyContinue } }"""; Flags: runhidden; Tasks: power; StatusMsg: "네트워크 어댑터 절전 해제 중..."
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object {{ $pm = Get-NetAdapterPowerManagement -Name $_.Name -ErrorAction SilentlyContinue; if ($pm) {{ $pm.AllowComputerToTurnOffDevice = 'Disabled'; Set-NetAdapterPowerManagement -InputObject $pm -ErrorAction SilentlyContinue } } }"""; Flags: runhidden; Tasks: power; StatusMsg: "네트워크 어댑터 절전 해제 중..."
 ; 설치 마침 후 콘솔 열기 — 최초 실행은 사람이 콘솔에서 세션 설정·수집 시작
 Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}"""; Description: "지금 콘솔 열기 (세션 설정·수집 시작)"; Flags: postinstall nowait skipifsilent
 
