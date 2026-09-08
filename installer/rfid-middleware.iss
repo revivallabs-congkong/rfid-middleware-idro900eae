@@ -46,7 +46,7 @@ Name: "{#DataDir}"; Permissions: users-modify authusers-modify
 
 [Tasks]
 Name: "svc"; Description: "무인 상주 서비스로 등록 (행사장에 두고 무인 운영할 때)"; GroupDescription: "설치 옵션:"; Flags: unchecked
-Name: "power"; Description: "행사용 전원 설정 적용 (절전·화면 끄기·최대 절전 해제)"; GroupDescription: "설치 옵션:"
+Name: "power"; Description: "행사용 전원 설정 적용 (절전·화면 끄기·최대 절전 해제, 랜 어댑터 절전 해제)"; GroupDescription: "설치 옵션:"
 Name: "desktopicon"; Description: "바탕화면 바로가기 만들기"; GroupDescription: "설치 옵션:"
 
 [Icons]
@@ -74,6 +74,9 @@ Filename: "powercfg"; Parameters: "/change standby-timeout-ac 0"; Flags: runhidd
 Filename: "powercfg"; Parameters: "/change monitor-timeout-ac 0"; Flags: runhidden; Tasks: power
 Filename: "powercfg"; Parameters: "/change hibernate-timeout-ac 0"; Flags: runhidden; Tasks: power
 Filename: "powercfg"; Parameters: "/change disk-timeout-ac 0"; Flags: runhidden; Tasks: power
+; 유선 랜 어댑터의 "전원을 절약하기 위해 이 장치를 끌 수 있음" 해제 — 무인 운영 중
+; NIC 절전으로 링크가 끊겨(‘미디어 연결 끊김’) 리더 접속이 죽는 것을 예방한다.
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""Get-NetAdapter -Physical -ErrorAction SilentlyContinue | ForEach-Object { $pm = Get-NetAdapterPowerManagement -Name $_.Name -ErrorAction SilentlyContinue; if ($pm) { $pm.AllowComputerToTurnOffDevice = 'Disabled'; Set-NetAdapterPowerManagement -InputObject $pm -ErrorAction SilentlyContinue } }"""; Flags: runhidden; Tasks: power; StatusMsg: "네트워크 어댑터 절전 해제 중..."
 ; 설치 마침 후 콘솔 열기 — 최초 실행은 사람이 콘솔에서 세션 설정·수집 시작
 Filename: "{app}\rfid-middleware.exe"; Parameters: "gui --config ""{#ConfigPath}"""; Description: "지금 콘솔 열기 (세션 설정·수집 시작)"; Flags: postinstall nowait skipifsilent
 
