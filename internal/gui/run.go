@@ -315,6 +315,26 @@ func (ga *guiApp) augment(st *State, s health.Status, now time.Time) {
 	ga.mu.Lock()
 	cfg := ga.cfg
 	ga.mu.Unlock()
+	// 리더 연결 끊김의 원인을 구분해 안내한다: 호스트가 리더 대역(예 192.168.9.x)에
+	// IP 를 갖고 있지 않으면 랜선/어댑터 링크 문제(미디어 연결 끊김·어댑터 절전·IP
+	// 유실)이고, 갖고 있는데 끊겼으면 리더 전원/케이블 문제다. winnet 은 비관리자
+	// 조회. 끊긴 리더에만 인터페이스를 열거하므로 정상 운영 중엔 비용이 없다.
+	if cfg != nil {
+		for i := range st.Readers {
+			r := &st.Readers[i]
+			if r.ConnState != "DISCONNECTED" {
+				continue
+			}
+			cr, ok := cfg.Reader(r.ID)
+			if !ok {
+				continue
+			}
+			if prefix := winnet.Subnet24(cr.Addr); prefix != "" && !winnet.HasHostInSubnet(prefix) {
+				r.GateText = "리더 대역 IP 없음 — 랜선 확인"
+				r.ActionText = "이 노트북에 리더 대역(" + prefix + "x) IP가 없습니다. 랜선 연결과 어댑터 상태(‘미디어 연결 끊김’)를 확인하세요. 어댑터 절전으로 끊겼다면 전원 관리에서 절전을 끄세요."
+			}
+		}
+	}
 	if cat != nil {
 		cv.EventName = cat.EventName
 		cv.ExportedAt = cat.ExportedAt
